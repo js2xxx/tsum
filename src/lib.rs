@@ -19,8 +19,8 @@ use core::{
 };
 
 mod derive;
-pub mod range;
-pub mod repr;
+mod range;
+mod repr;
 pub mod tag;
 
 use self::tag::{Tag, UTerm};
@@ -77,17 +77,17 @@ macro_rules! t {
 }
 
 /// The true generic representation of a sum type.
-/// 
+///
 /// See the [crate-level] documentation for more information.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```rust
 /// use tsum::Sum;
-/// 
+///
 /// let s: Sum![i32, u32, f64] = Sum::new(42u32);
 /// ```
-/// 
+///
 /// [crate-level]: crate
 pub struct Sum<S: repr::SumList> {
     tag: u8,
@@ -235,13 +235,14 @@ impl<S: repr::SumList> Sum<S> {
         S::type_name(self.tag)
     }
 
-    /// Coerces the inhabited value into the dynamic type.
-    /// 
+    /// Coerces the reference of the inhabited value immutably into the dynamic
+    /// type.
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use tsum::Sum;
-    /// 
+    ///
     /// let s: Sum![i32, u64, String] = Sum::new(42i32);
     /// assert_eq!(s.as_any().downcast_ref::<i32>(), Some(&42));
     pub fn as_any(&self) -> &dyn core::any::Any
@@ -251,15 +252,18 @@ impl<S: repr::SumList> Sum<S> {
         unsafe { S::as_any(&self.data, self.tag) }
     }
 
-    /// Coerces the inhabited value into the dynamic type mutably.
-    /// 
+    /// Coerces the reference of the inhabited value mutably into the dynamic
+    /// type.
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use tsum::Sum;
-    /// 
+    ///
     /// let mut s: Sum![i32, u64, String] = Sum::new(42i32);
     /// *s.as_any_mut().downcast_mut::<i32>().unwrap() += 1;
+    /// assert_eq!(s.get(), Some(&43i32));
+    /// ```
     pub fn as_any_mut(&mut self) -> &mut dyn core::any::Any
     where
         S: derive::TypeMeta + 'static,
@@ -269,6 +273,16 @@ impl<S: repr::SumList> Sum<S> {
 }
 
 impl<S: repr::SumList> Sum<S> {
+    /// Constructs a new `Sum` from the given value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// assert_eq!(s.get(), Some(&42i32));
+    /// ```
     pub fn new<T, U>(value: T) -> Self
     where
         S: repr::Split<T, U>,
@@ -280,6 +294,22 @@ impl<S: repr::SumList> Sum<S> {
         }
     }
 
+    /// Constructs a new `Sum` from the given value and a marker of its type
+    /// lists.
+    ///
+    /// This is useful when the type information is not known at macro
+    /// expansion. It can be used in pairs with [`Sum::type_marker`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::marker::PhantomData;
+    /// use tsum::{Sum, T};
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// let s2 = Sum::new_marked(42i32, s.type_marker());
+    /// assert_eq!(s, s2);
+    /// ```
     pub fn new_marked<T, U>(value: T, _: PhantomData<S>) -> Self
     where
         S: repr::Split<T, U>,
@@ -288,10 +318,36 @@ impl<S: repr::SumList> Sum<S> {
         Self::new(value)
     }
 
+    /// Returns a marker of the type list of the `Sum`.
+    ///
+    /// This is useful when the type information is not known at macro
+    /// expansion. It can be used in pairs with [`Sum::new_marked`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::marker::PhantomData;
+    /// use tsum::{Sum, T};
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// let s2 = Sum::new_marked(42i32, s.type_marker());
+    /// assert_eq!(s, s2);
+    /// ```
     pub fn type_marker(&self) -> PhantomData<S> {
         PhantomData
     }
 
+    /// Returns an immutable reference to the value if the `Sum` is inhabited
+    /// with the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// assert_eq!(s.get(), Some(&42i32));
+    /// ```
     pub fn get<T, U>(&self) -> Option<&T>
     where
         S: repr::Split<T, U>,
@@ -300,6 +356,18 @@ impl<S: repr::SumList> Sum<S> {
         (self.tag == U::VALUE).then(|| unsafe { &*S::as_ptr(&self.data) })
     }
 
+    /// Returns a mutable reference to the value if the `Sum` is inhabited
+    /// with the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let mut s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// *s.get_mut::<i32, _>().unwrap() += 1;
+    /// assert_eq!(s.get(), Some(&43i32));
+    /// ```
     pub fn get_mut<T, U>(&mut self) -> Option<&mut T>
     where
         S: repr::Split<T, U>,
@@ -308,6 +376,21 @@ impl<S: repr::SumList> Sum<S> {
         (self.tag == U::VALUE).then(|| unsafe { &mut *S::as_mut_ptr(&mut self.data) })
     }
 
+    /// Performs the given function if the `Sum` is inhabited with the specified
+    /// type.
+    ///
+    /// This function can be called in chain.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// let s = s.inspect(|value: &i32| assert_eq!(value, &42i32))
+    ///     .inspect(|value: &u64| assert_eq!(value, &236u64))
+    ///     .inspect(|value: &String| assert_eq!(value, &"whatever".to_string()));
+    /// ```
     pub fn inspect<T, U, F>(self, f: F) -> Self
     where
         S: repr::Split<T, U>,
@@ -320,6 +403,20 @@ impl<S: repr::SumList> Sum<S> {
         self
     }
 
+    /// Performs the given function if the `Sum` is inhabited with the specified
+    /// type.
+    ///
+    /// This function can be called in chain.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// let s = s.inspect_mut(|value: &mut i32| *value += 1);
+    /// assert_eq!(s.get(), Some(&43i32));
+    /// ```
     pub fn inspect_mut<T, U, F>(mut self, f: F) -> Self
     where
         S: repr::Split<T, U>,
@@ -333,11 +430,37 @@ impl<S: repr::SumList> Sum<S> {
     }
 }
 
+/// The remainder type list from splitting type list `S` with type `T` and its
+/// index tag `U`.
 pub type Rem<S, T, U> = <S as repr::Split<T, U>>::Remainder;
+
+/// The remainder index tag map from splitting type list `S` with type `T` and
+/// its index tag `U`.
 pub type RemTags<S, T, U> = <S as repr::Split<T, U>>::RemainderTags;
+
+/// The type list calculated by substituting type list `S` with type `T` and its
+/// index tag `U`.
 pub type Substitute<S, T, T2, U> = <S as repr::Split<T, U>>::Substitute<T2>;
 
 impl<S: repr::SumList> Sum<S> {
+    /// Returns the value if the `Sum` is inhabited with the specified type.
+    ///
+    /// Otherwise, returns a `Sum` of its remainder types.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// assert_eq!(s.try_unwrap::<i32, _>(), Ok(42i32));
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(236u64);
+    /// assert_eq!(
+    ///     s.try_unwrap::<i32, _>(),
+    ///     Err(<Sum![u64, String]>::new(236u64))
+    /// );
+    /// ```
     pub fn try_unwrap<T, U>(self) -> Result<T, Sum<Rem<S, T, U>>>
     where
         S: repr::Split<T, U>,
@@ -353,6 +476,25 @@ impl<S: repr::SumList> Sum<S> {
         }
     }
 
+    /// Performs the given function if the `Sum` is inhabited with the specified
+    /// type.
+    ///
+    /// This function returns a `Sum` of a list of new types, in which the
+    /// specified type is replaced with the result type of the function.
+    ///
+    /// This function can be called in chain.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// let s: Sum![u8, u64, usize] = s
+    ///     .map(|value: i32| (value + 1) as u8)
+    ///     .map(|s: String| s.len());
+    /// assert_eq!(s.get(), Some(&43u8));
+    /// ```
     pub fn map<T, T2, U>(self, f: impl FnOnce(T) -> T2) -> Sum<Substitute<S, T, T2, U>>
     where
         S: repr::Split<T, U>,
@@ -377,9 +519,27 @@ impl<S: repr::SumList> Sum<S> {
     }
 }
 
+/// The remainder type list from splitting type list `S` with type list `S2` and
+/// its index tag map `UMap`.
 pub type NarrowRem<S, S2, UMap> = <S as range::SplitList<S2, UMap>>::Remainder;
 
 impl<S: repr::SumList> Sum<S> {
+    /// Returns a `Sum` of specified list of type narrowed from the callee's
+    /// type list if the `Sum` is inhabited within the specified type list.
+    ///
+    /// Otherwise, returns a `Sum` of its remainder types.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::{Sum, T};
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// assert_eq!(s.narrow::<T![i32, u64], _>(), Ok(<Sum![i32, u64]>::new(42i32)));
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(236u64);
+    /// assert_eq!(s.narrow::<T![i32, String], _>(), Err(236u64.into()));
+    /// ```
     pub fn narrow<S2, UMap>(self) -> Result<Sum<S2>, Sum<NarrowRem<S, S2, UMap>>>
     where
         S: range::SplitList<S2, UMap>,
@@ -398,6 +558,22 @@ impl<S: repr::SumList> Sum<S> {
         }
     }
 
+    /// Returns a `Sum` of specified list of type broadened from the callee's
+    /// type list.
+    ///
+    /// Unlike [`Sum::narrow`], this function always succeed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::{Sum, T};
+    ///
+    /// let s: Sum![i32, u64] = Sum::new(42i32);
+    /// assert_eq!(
+    ///     s.broaden::<T![i32, u64, String], _>(),
+    ///     <Sum![i32, u64, String]>::new(42i32)
+    /// );
+    /// ```
     pub fn broaden<S2, UMap>(self) -> Sum<S2>
     where
         S2: range::SplitList<S, UMap>,

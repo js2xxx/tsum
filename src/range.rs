@@ -111,15 +111,3 @@ where
         })
     }
 }
-
-pub trait ContainsList<TList: SumList, UList, RemUList>:
-    SplitList<TList, UList> + SplitList<<Self as SplitList<TList, UList>>::Remainder, RemUList>
-{
-}
-
-impl<S, T, U, R> ContainsList<T, U, R> for S
-where
-    S: SplitList<T, U> + SplitList<<Self as SplitList<T, U>>::Remainder, R>,
-    T: SumList,
-{
-}
