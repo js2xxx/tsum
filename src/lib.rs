@@ -349,14 +349,14 @@ impl<S: repr::SumList> Sum<S> {
     /// use tsum::Sum;
     ///
     /// let mut s: Sum![i32, u64, String] = Sum::new(42i32);
-    /// *s.as_any_mut().downcast_mut::<i32>().unwrap() += 1;
+    /// *s.as_mut_any().downcast_mut::<i32>().unwrap() += 1;
     /// assert_eq!(s.get(), Some(&43i32));
     /// ```
-    pub fn as_any_mut(&mut self) -> &mut dyn core::any::Any
+    pub fn as_mut_any(&mut self) -> &mut dyn core::any::Any
     where
         S: derive::TypeMeta + 'static,
     {
-        unsafe { S::as_any_mut(&mut self.data, self.tag) }
+        unsafe { S::as_mut_any(&mut self.data, self.tag) }
     }
 }
 

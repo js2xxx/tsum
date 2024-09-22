@@ -95,7 +95,7 @@ pub trait TypeMeta: SumList {
     where
         Self: 'static;
 
-    unsafe fn as_any_mut(this: &mut Self::Repr, tag: u8) -> &mut dyn core::any::Any
+    unsafe fn as_mut_any(this: &mut Self::Repr, tag: u8) -> &mut dyn core::any::Any
     where
         Self: 'static;
 }
@@ -113,7 +113,7 @@ impl TypeMeta for () {
         unreachable!()
     }
 
-    unsafe fn as_any_mut(_: &mut Self::Repr, _: u8) -> &mut dyn core::any::Any {
+    unsafe fn as_mut_any(_: &mut Self::Repr, _: u8) -> &mut dyn core::any::Any {
         unreachable!()
     }
 }
@@ -154,14 +154,14 @@ where
         }
     }
 
-    unsafe fn as_any_mut(this: &mut Self::Repr, tag: u8) -> &mut dyn core::any::Any
+    unsafe fn as_mut_any(this: &mut Self::Repr, tag: u8) -> &mut dyn core::any::Any
     where
         Self: 'static,
     {
         if tag == 0 {
             unsafe { &mut *this.data }
         } else {
-            unsafe { Tail::as_any_mut(&mut this.next, tag - 1) }
+            unsafe { Tail::as_mut_any(&mut this.next, tag - 1) }
         }
     }
 }
