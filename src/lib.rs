@@ -72,7 +72,7 @@
 //! the memory layout of a sum type resembles a tagged union:
 //!
 //! ```rust,ignore
-//! struct Nil(Infailable);
+//! struct Nil(Infallable);
 //! union Cons<T, Next> {
 //!     data: ManuallyDrop<T>,
 //!     next: ManuallyDrop<Next>,
