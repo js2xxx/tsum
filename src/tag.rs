@@ -28,7 +28,7 @@
 
 use core::marker::PhantomData;
 
-/// The terminator tag use by [the sum type].
+/// The terminator tag used by [the sum type].
 /// 
 /// See the [module-level documentation] for more.
 /// 
@@ -36,7 +36,7 @@ use core::marker::PhantomData;
 /// [module-level documentation]: self
 pub struct UTerm;
 
-/// The accumulator tag use by [the sum type].
+/// The accumulator tag used by [the sum type].
 /// 
 /// See the [module-level documentation] for more.
 /// 
