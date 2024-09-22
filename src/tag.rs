@@ -1,12 +1,57 @@
+//! Index tags used by [the sum type].
+//!
+//! # Examples
+//!
+//! ```rust
+//! use tsum::{Sum, T, tags::*};
+//!
+//! type T1 = (u32, (String, ()));
+//! type T2 = (u32, (String, (u32, ())));
+//!
+//! let mut sum: Sum<T1> = sum.broaden();
+//! assert_eq!(sum.get::<u32, _>(), Some(&12345));
+//! assert_eq!(sum.get::<_, U1>(), None);
+//!
+//! sum = Sum::new("Hello World!".to_string());
+//! assert_eq!(sum.get(), Some(&"Hello World!".to_string()));
+//!
+//! let sum: Sum<T2> = sum.broaden::<_, T![U2, U1]>();
+//! assert_eq!(sum.get(), Some(&"Hello World!".to_string()));
+//!
+//! let sum: Sum<T1> = sum.narrow::<_, T![U0, U0]>().unwrap();
+//! let sum: Sum<(String, ())> = sum.narrow::<T0, _>().unwrap_err();
+//! assert_eq!(*sum, "Hello World!");
+//! ```
+//!
+//! [the sum type]: struct@crate::Sum
 #![allow(missing_docs)]
 
 use core::marker::PhantomData;
 
+/// The terminator tag use by [the sum type].
+/// 
+/// See the [module-level documentation] for more.
+/// 
+/// [the sum type]: struct@crate::Sum
+/// [module-level documentation]: self
 pub struct UTerm;
 
+/// The accumulator tag use by [the sum type].
+/// 
+/// See the [module-level documentation] for more.
+/// 
+/// [the sum type]: struct@crate::Sum
+/// [module-level documentation]: self
 pub struct UInt<U>(PhantomData<U>);
 
+/// Index tags used by [the sum type].
+/// 
+/// See the [module-level documentation] for more.
+/// 
+/// [the sum type]: struct@crate::Sum
+/// [module-level documentation]: self
 pub trait Tag {
+    /// The reified value of the tag.
     const VALUE: u8;
 }
 
