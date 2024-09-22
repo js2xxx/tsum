@@ -1,4 +1,94 @@
-#![doc = include_str!("../README.md")]
+//! THE true generic sum type for Rust.
+//!
+//! # Usage
+//!
+//! Manipulating with values:
+//!
+//! ```rust
+//! type Sum1 = tsum::Sum![u32, usize, String, Vec<u8>];
+//!
+//! let v1: Sum1 = Sum1::new(1u32);
+//! let mut v2: Sum1 = Sum1::new(2usize);
+//! let v3: Sum1 = Sum1::new("hello".to_string());
+//! let v4: Sum1 = Sum1::new(vec![1, 2, 3]);
+//!
+//! assert_eq!(v4.get(), Some(&vec![1, 2, 3]));
+//! assert_eq!(v2.get::<u32, _>(), None);
+//! assert_eq!(v2.get_mut::<usize, _>(), Some(&mut 2usize));
+//!
+//! // The code below will not compile
+//! // because the type `()` is not a member of `Sum1`.
+//! //
+//! // assert_eq!(v2.get::<(), _>(), None);
+//! ```
+//!
+//! Manipulating with type lists:
+//!
+//! ```rust
+//! use tsum::{Sum, T};
+//!
+//! type Sum1 = Sum![u32, usize, String, Vec<u8>];
+//! type Sum2 = Sum![u32, usize, Vec<u8>];
+//! type Sum3 = Sum![u32, usize, i64, Vec<u8>];
+//!
+//! let sum: Sum1 = Sum1::new(42u32);
+//!
+//! // Broadening or narrowing a sum type is very easy:
+//! let sum: Sum2 = sum.narrow().unwrap();
+//! let sum: Sum3 = sum.broaden();
+//!
+//! // Failed operations also shrinks its type list to a subset.
+//! let sum: Sum2 = sum.try_unwrap::<i64, _>().unwrap_err();
+//! let value: u32 = sum.try_unwrap().unwrap();
+//! assert_eq!(value, 42);
+//!
+//! let sum: Sum1 = Sum1::new("hello".to_string());
+//! let sum: Sum3 = sum.map(|s: String| s.as_bytes()[0] as i64);
+//! assert_eq!(sum, Sum3::new(104i64));
+//! ```
+//!
+//! Interacting with common traits:
+//!
+//! ```rust
+//! use tsum::{Sum, T};
+//!
+//! type Sum1 = Sum![u32, usize, String];
+//!
+//! fn assert_send_sync<T: Send + Sync>(_: T) {}
+//!
+//! assert_send_sync(Sum1::new(42u32));
+//! assert_send_sync(Sum1::new("hello".to_string()));
+//!
+//! let sum: Sum1 = Sum::new(42usize);
+//!
+//! let cloned = sum.clone();
+//! assert!(sum != Sum::new(42u32));
+//! assert_eq!(format!("{sum}"), "42");
+//! ```
+//!
+//! # Implementation details
+//!
+//! This crate defines a sum type by hand-written tagged unions. In other words,
+//! the memory layout of a sum type resembles a tagged union:
+//!
+//! ```rust,ignore
+//! struct Nil(Infailable);
+//! union Cons<T, Next> {
+//!     data: ManuallyDrop<T>,
+//!     next: ManuallyDrop<Next>,
+//! }
+//!
+//! // For example only. Not actually defined.
+//! struct RawSum2<T1, T2> {
+//!     tag: u8,
+//!     data: Cons<T1, Cons<T2, Nil>>,
+//! }
+//! ```
+//!
+//! And all the traits are implemented upon this layout.
+//!
+//! See the source code for more details.
+
 #![no_std]
 #![deny(future_incompatible)]
 #![deny(rust_2018_idioms)]
@@ -24,8 +114,6 @@ mod repr;
 pub mod tag;
 
 use self::tag::{Tag, UTerm};
-
-type Repr<S> = <S as repr::SumList>::Repr;
 
 /// Constructs a [`struct@Sum`] type from a list of types.
 ///
@@ -91,7 +179,7 @@ macro_rules! t {
 /// [crate-level]: crate
 pub struct Sum<S: repr::SumList> {
     tag: u8,
-    data: ManuallyDrop<Repr<S>>,
+    data: ManuallyDrop<S::Repr>,
 }
 
 impl<T> From<T> for Sum![T] {
