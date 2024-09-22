@@ -137,7 +137,8 @@ assert_eq!(format!("{sum}"), "42");
 
 ## Caveats
 
-- Due to the limitation of Rust, `Sum` does not implement `Copy`.
+- Due to the limitations of Rust, `Sum` does not implement `Copy`.
+- Due to the limitations of Rust, Custom derivable traits cannot derive on `Sum` automatically. Use a wrapper struct instead.
 - This crate heavily relies on unsafe code (manually implemented tagged unions). Use it at your own risk.
 
 ## License
