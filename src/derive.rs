@@ -148,7 +148,7 @@ where
         Tail: 'static,
     {
         if tag == 0 {
-            unsafe { &this.data }
+            unsafe { &*this.data }
         } else {
             unsafe { Tail::as_any(&this.next, tag - 1) }
         }
@@ -159,7 +159,7 @@ where
         Self: 'static,
     {
         if tag == 0 {
-            unsafe { &mut this.data }
+            unsafe { &mut *this.data }
         } else {
             unsafe { Tail::as_any_mut(&mut this.next, tag - 1) }
         }
