@@ -1,6 +1,6 @@
 # THE true generic sum type for Rust
 
-This crate provides a way to create true sum types in Rust. It is based on the [sum type](https://en.wikipedia.org/wiki/Tagged_union) concept from functional programming.
+This crate provides THE true generic [sum types](https://en.wikipedia.org/wiki/Tagged_union) in Rust.
 
 The provided sum type are not derived from user-defined types, nor from massive amount of generated `enum`s. Instead, there is only one "true generic sum type" defined in the crate, which uses varadic type lists for type binding.
 
