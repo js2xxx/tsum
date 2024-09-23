@@ -3,16 +3,13 @@
 //! # Examples
 //!
 //! ```rust
-//! use tsum::{Sum, T, tags::*};
+//! use tsum::{Sum, T, tag::*};
 //!
-//! type T1 = (u32, (String, ()));
-//! type T2 = (u32, (String, (u32, ())));
+//! type T0 = T![u32];
+//! type T1 = T![u32, String];
+//! type T2 = T![u32, String, u32];
 //!
-//! let mut sum: Sum<T1> = sum.broaden();
-//! assert_eq!(sum.get::<u32, _>(), Some(&12345));
-//! assert_eq!(sum.get::<_, U1>(), None);
-//!
-//! sum = Sum::new("Hello World!".to_string());
+//! let sum: Sum<T1> = Sum::new("Hello World!".to_string());
 //! assert_eq!(sum.get(), Some(&"Hello World!".to_string()));
 //!
 //! let sum: Sum<T2> = sum.broaden::<_, T![U2, U1]>();

@@ -1,18 +1,57 @@
+//! The module dealing with the underlying representation of the [`Sum`] type.
+//!
+//! # Implementation details
+//!
+//! This crate defines a sum type by hand-written tagged unions. In other words,
+//! the memory layout of a sum type resembles a tagged union:
+//!
+//! ```rust,ignore
+//! struct Nil(Infallable);
+//! union Cons<T, Next> {
+//!     data: ManuallyDrop<T>,
+//!     next: ManuallyDrop<Next>,
+//! }
+//!
+//! // For example only. Not actually defined.
+//! struct RawSum2<T1, T2> {
+//!     tag: u8,
+//!     data: Cons<T1, Cons<T2, Nil>>,
+//! }
+//! ```
+//!
+//! And all the traits are implemented upon this layout.
+//!
+//! See the source code for more details.
+
 use core::{convert::Infallible, mem::ManuallyDrop, ptr};
 
-use super::range::Count;
-use crate::tag::{Tag, UInt, UTerm, U1};
+use crate::{
+    tag::{Tag, UInt, UTerm, U1},
+    NarrowRem, Rem,
+};
 
+/// The terminator type of the underlying union of the [`Sum`] type.
+///
+/// [`Sum`]: crate::Sum
 pub struct Nil(pub(super) Infallible);
 
-#[repr(C)]
+/// The accumulator type of the underlying union of the [`Sum`] type.
+///
+/// [`Sum`]: crate::Sum
 pub union Cons<T, U> {
     pub(super) data: ManuallyDrop<T>,
     pub(super) next: ManuallyDrop<U>,
 }
 
+/// The trait that type lists implement to support its corresponding tagged
+/// union representation for the [`Sum`] type.
+///
+/// [`Sum`]: crate::Sum
 pub trait SumList: Count {
+    /// The underlying representation of the `Sum` type.
     type Repr;
+
+    /// The index tag mapping from the type list to the `Sum` type.
     type Tags<U>;
 
     #[doc(hidden)]
@@ -42,6 +81,10 @@ where
     }
 }
 
+/// The trait that type lists implement to support manipulating a specified
+/// variant value marked by a specified tag in the [`Sum`] type.
+///
+/// [`Sum`]: crate::Sum
 pub trait Split<T, U: Tag>: SumList {
     #[doc(hidden)]
     fn from_data(data: T) -> Self::Repr;
@@ -55,8 +98,16 @@ pub trait Split<T, U: Tag>: SumList {
     #[doc(hidden)]
     fn as_mut_ptr(this: &mut Self::Repr) -> *mut T;
 
+    /// The remainder type list from splitting type list `Self` with type `T`
+    /// and its index tag `U`.
     type Remainder: SumList;
+
+    /// The remainder index tag map from splitting type list `Self` with type
+    /// `T` and its index tag `U`.
     type RemainderTags;
+
+    /// The type list calculated by substituting type list `Self` with type `T`
+    /// and its index tag `U`.
     type Substitute<T2>: Split<T2, U>;
 
     #[doc(hidden)]
@@ -151,5 +202,80 @@ where
             core::cmp::Ordering::Less => Err(tag),
             core::cmp::Ordering::Greater => Err(tag - 1),
         }
+    }
+}
+
+/// Counts the number of elements in a type list using index tags.
+pub trait Count {
+    /// The number of elements in the type list, measured by index tags.
+    type Count: Tag;
+}
+
+impl Count for () {
+    type Count = UTerm;
+}
+
+impl<Head, Tail> Count for (Head, Tail)
+where
+    Tail: Count,
+{
+    type Count = UInt<Tail::Count>;
+}
+
+/// The trait that type lists implement to be able to be splitted from another
+/// type list.
+pub trait SplitList<TList: SumList, UList>: SumList {
+    /// The remainder type list from splitting type list `Self` with type list
+    /// `TList` and its index tag map `UList`.
+    type Remainder: SumList;
+
+    #[doc(hidden)]
+    fn broaden_tag(tag: u8) -> u8;
+
+    #[doc(hidden)]
+    fn narrow_tag(tag: u8) -> Result<u8, u8>;
+}
+
+impl<T: SumList> SplitList<(), ()> for T {
+    type Remainder = Self;
+
+    fn broaden_tag(tag: u8) -> u8 {
+        unreachable!("mapping tag {tag} from an empty set")
+    }
+
+    fn narrow_tag(tag: u8) -> Result<u8, u8> {
+        Err(tag)
+    }
+}
+
+impl<SubHead, SubTail, SuperHead, SuperTail, HeadTag: Tag, TailTag>
+    SplitList<(SubHead, SubTail), (HeadTag, TailTag)> for (SuperHead, SuperTail)
+where
+    SubTail: SumList,
+    SuperTail: SumList,
+
+    Self: Split<SubHead, HeadTag>,
+    Rem<Self, SubHead, HeadTag>: SplitList<SubTail, TailTag>,
+{
+    type Remainder = NarrowRem<Rem<Self, SubHead, HeadTag>, SubTail, TailTag>;
+
+    fn broaden_tag(tag: u8) -> u8 {
+        match <(SubHead, SubTail) as Split<SubHead, UTerm>>::try_unwrap(tag) {
+            Ok(()) => HeadTag::VALUE,
+            Err(remainder) => {
+                let ret = Rem::<Self, SubHead, HeadTag>::broaden_tag(remainder);
+                Self::from_remainder(ret)
+            }
+        }
+    }
+
+    fn narrow_tag(tag: u8) -> Result<u8, u8> {
+        Ok(match Self::try_unwrap(tag) {
+            Ok(()) => 0,
+            Err(remainder) => {
+                let ret = Rem::<Self, SubHead, HeadTag>::narrow_tag(remainder)?;
+                <(SubHead, SubTail) as Split<SubHead, UTerm>>::from_remainder(ret)
+            }
+        })
     }
 }

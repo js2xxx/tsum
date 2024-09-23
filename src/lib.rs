@@ -68,26 +68,7 @@
 //!
 //! # Implementation details
 //!
-//! This crate defines a sum type by hand-written tagged unions. In other words,
-//! the memory layout of a sum type resembles a tagged union:
-//!
-//! ```rust,ignore
-//! struct Nil(Infallable);
-//! union Cons<T, Next> {
-//!     data: ManuallyDrop<T>,
-//!     next: ManuallyDrop<Next>,
-//! }
-//!
-//! // For example only. Not actually defined.
-//! struct RawSum2<T1, T2> {
-//!     tag: u8,
-//!     data: Cons<T1, Cons<T2, Nil>>,
-//! }
-//! ```
-//!
-//! And all the traits are implemented upon this layout.
-//!
-//! See the source code for more details.
+//! See the [`repr`] module for more details.
 
 #![no_std]
 #![deny(future_incompatible)]
@@ -109,8 +90,7 @@ use core::{
 };
 
 mod derive;
-mod range;
-mod repr;
+pub mod repr;
 pub mod tag;
 
 use self::tag::{Tag, UTerm};
@@ -609,7 +589,7 @@ impl<S: repr::SumList> Sum<S> {
 
 /// The remainder type list from splitting type list `S` with type list `S2` and
 /// its index tag map `UMap`.
-pub type NarrowRem<S, S2, UMap> = <S as range::SplitList<S2, UMap>>::Remainder;
+pub type NarrowRem<S, S2, UMap> = <S as repr::SplitList<S2, UMap>>::Remainder;
 
 impl<S: repr::SumList> Sum<S> {
     /// Returns a `Sum` of specified list of type narrowed from the callee's
@@ -630,11 +610,11 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn narrow<S2, UMap>(self) -> Result<Sum<S2>, Sum<NarrowRem<S, S2, UMap>>>
     where
-        S: range::SplitList<S2, UMap>,
+        S: repr::SplitList<S2, UMap>,
         S2: repr::SumList,
     {
         let this = ManuallyDrop::new(self);
-        match <S as range::SplitList<S2, UMap>>::narrow_tag(this.tag) {
+        match <S as repr::SplitList<S2, UMap>>::narrow_tag(this.tag) {
             Ok(tag) => unsafe {
                 let data = mem::transmute_copy(&this.data);
                 Ok(Sum { tag, data })
@@ -664,10 +644,10 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn broaden<S2, UMap>(self) -> Sum<S2>
     where
-        S2: range::SplitList<S, UMap>,
+        S2: repr::SplitList<S, UMap>,
     {
         unsafe {
-            let tag = <S2 as range::SplitList<S, UMap>>::broaden_tag(self.tag);
+            let tag = <S2 as repr::SplitList<S, UMap>>::broaden_tag(self.tag);
             let mut data = MaybeUninit::<S2::Repr>::uninit();
             data.as_mut_ptr()
                 .cast::<ManuallyDrop<S::Repr>>()
