@@ -3,7 +3,7 @@
 //! # Examples
 //!
 //! ```rust
-//! use tsum::{Sum, T, tag::*};
+//! use tsum::{Sum, T, sum::index::*};
 //!
 //! type T0 = T![u32];
 //! type T1 = T![u32, String];
@@ -25,39 +25,39 @@
 
 use core::marker::PhantomData;
 
-/// The terminator tag used by [the sum type].
-/// 
+/// The terminator index used by [the sum type].
+///
 /// See the [module-level documentation] for more.
-/// 
+///
 /// [the sum type]: struct@crate::Sum
 /// [module-level documentation]: self
 pub struct UTerm;
 
-/// The accumulator tag used by [the sum type].
-/// 
+/// The accumulator index used by [the sum type].
+///
 /// See the [module-level documentation] for more.
-/// 
+///
 /// [the sum type]: struct@crate::Sum
 /// [module-level documentation]: self
 pub struct UInt<U>(PhantomData<U>);
 
 /// Index tags used by [the sum type].
-/// 
+///
 /// See the [module-level documentation] for more.
-/// 
+///
 /// [the sum type]: struct@crate::Sum
 /// [module-level documentation]: self
-pub trait Tag {
+pub trait Index {
     /// The reified value of the tag.
-    const VALUE: u8;
+    const TAG: u8;
 }
 
-impl Tag for UTerm {
-    const VALUE: u8 = 0;
+impl Index for UTerm {
+    const TAG: u8 = 0;
 }
 
-impl<U: Tag> Tag for UInt<U> {
-    const VALUE: u8 = 1 + U::VALUE;
+impl<U: Index> Index for UInt<U> {
+    const TAG: u8 = 1 + U::TAG;
 }
 
 pub type U0 = UTerm;
