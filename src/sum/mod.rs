@@ -705,12 +705,12 @@ mod tests {
         type T2 = (X1, (X2, (u32, ())));
 
         let sum: Sum<T2> = Sum::new(X1(12345u32));
-        let x = tsum_macros::match_sum!(sum {
+        let x = tsum_macros::match_sum!(match sum {
             X1(12345) => 0,
             X2(10..=456, s) => {
                 std::println!("{s}");
                 1
-            },
+            }
             23456u32 => 3,
             X1(x) | X2(x, ..) => x,
             .. => 4,

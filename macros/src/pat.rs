@@ -249,6 +249,9 @@ pub struct SumMatch {
 
 impl Parse for SumMatch {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![match]) {
+            input.parse::<Token![match]>()?;
+        }
         let expr = Box::new(Expr::parse_without_eager_brace(input)?);
 
         let content;
