@@ -1,3 +1,4 @@
+//! Procedural macros re-exported by `tsum`. Do not use these macros directly.
 #![allow(unused_features)]
 #![feature(non_exhaustive_omitted_patterns_lint, proc_macro_expand)]
 

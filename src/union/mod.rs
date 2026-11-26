@@ -1,9 +1,7 @@
-//! Tagged unions whose members are selected by type.
+//! The generic union type for Rust.
 //!
-//! Each member of a [`Union`] implements [`Element`] and has a distinct
-//! element ID. Use [`crate::Union!`] to write the list of members. Positions
-//! are zero-based. The tag uses `()` for up to one member, `u8` for 2 through
-//! 256 members, and `usize` for larger lists.
+//! Unlike [sum types], each member of a [`Union`] implements [`Element`] and
+//! has a distinct element ID. Use [`Union!`] to write the list of members.
 //!
 //! ```
 //! use tsum::{T, Union};
@@ -15,6 +13,9 @@
 //! let full: Union![bool, u32, char] = subset.broaden();
 //! assert_eq!(full.try_unwrap::<char>(), Ok('b'));
 //! ```
+//!
+//! [sum types]: crate::sum::Sum
+//! [`Union!`]: macro@crate::Union
 
 use core::{
     marker::PhantomData,
@@ -28,15 +29,18 @@ mod derive;
 mod elem;
 mod repr;
 
-/// Derives [`Element`](trait@self::Element) for a local struct, enum, or union.
+/// Makes a local struct, enum, or union a member type by implementing
+/// [`Element`](trait@self::Element). If the `tsum` dependency has another name,
+/// use `#[tsum(crate = path)]` to specify its path.
 ///
-/// The generated ID is opaque. The optional `#[tsum(crate = path)]` attribute
-/// supplies the path to `typenum` used to spell that ID.
+/// # Examples
 ///
 /// ```
-/// use tsum::{Union, union::Element};
+/// use tsum as choices;
+/// use choices::{Union, union::Element};
 ///
 /// #[derive(Element, Debug, PartialEq)]
+/// #[tsum(crate = choices)]
 /// struct Port(u16);
 ///
 /// let value: Union![bool, Port] = Union::new(Port(443));
@@ -54,6 +58,8 @@ pub use self::{
 /// Cloning and formatting use the active value. Comparisons order different
 /// members by their positions in `L`. Hashing includes the position and value.
 /// Each trait is available when all members implement it.
+///
+/// # Examples
 ///
 /// ```
 /// use tsum::Union;
@@ -73,7 +79,20 @@ pub use self::{
 pub struct Union<L: UnionList>(Sum<L::Members>);
 
 impl Union<()> {
-    /// Eliminates an empty union, which has no possible values.
+    /// Instantiates a never type from an empty `Union`.
+    ///
+    /// This is useful for marking out branches of code that are unreachable
+    /// at compile time without using [`unreachable!`] or sorts.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let flag: Union![bool] = true.into();
+    /// let flag = flag.try_unwrap::<bool>().unwrap_or_else(|empty| empty.unreachable());
+    /// assert!(flag);
+    /// ```
     pub fn unreachable(self) -> ! {
         self.0.unreachable()
     }
@@ -81,6 +100,15 @@ impl Union<()> {
 
 impl<T: Element> From<T> for Union<(T, ())> {
     /// Wraps a value in a single-member union.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let flag: Union![bool] = true.into();
+    /// assert!(*flag);
+    /// ```
     fn from(value: T) -> Self {
         Self(value.into())
     }
@@ -105,6 +133,8 @@ impl<T: Element> DerefMut for Union<(T, ())> {
 impl<T: Element> Union<(T, ())> {
     /// Moves the only member out of a single-member union.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use tsum::Union;
     ///
@@ -117,17 +147,38 @@ impl<T: Element> Union<(T, ())> {
     }
 }
 
-/// The zero-based position of the member with `T`'s ID in `L`, as a
-/// [`typenum::Unsigned`].
+/// The zero-based position of the member with `T`'s ID in `L`.
+/// Read it as a number with [`typenum::Unsigned`].
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{T, union::Index};
+/// use typenum::Unsigned;
+///
+/// type Members = T![char, bool];
+/// assert_eq!(Index::<Members, bool>::USIZE, 1);
+/// ```
 pub type Index<L, T> = <L as repr::UnionOfImp<T, !>>::Index;
-/// The list obtained by removing `T` from `L`, preserving the remaining order.
+/// The list in the error returned by [`Union::try_unwrap`]. Removing `T`
+/// from `L` preserves the order of the remaining members.
 pub type Rem<L, T> = <L as repr::UnionOfImp<T, !>>::Remainder;
-/// The members of `L` left after removing every member of `L2`, in their
-/// original order.
+/// The list in the error returned by [`Union::narrow`]. It contains the
+/// members of `L` outside `L2`, in their original order.
 pub type ListRem<L, L2> = <L as repr::UnionOfListImp<L2>>::Remainder;
 
 impl<L: UnionList> Union<L> {
-    /// Constructs a union with `T` as its active member.
+    /// Constructs a union with `value`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// type Setting = Union![u32, bool];
+    /// let value = Setting::new(42u32);
+    /// assert_eq!(value.get::<u32>(), Some(&42));
+    /// ```
     pub fn new<T: Element>(value: T) -> Self
     where
         L: UnionOf<T>,
@@ -151,11 +202,33 @@ impl<L: UnionList> Union<L> {
     ///
     /// This is useful when the type information is not known at macro
     /// expansion. It can be used in pairs with [`Union::new_marked`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let value: Union![u32, bool] = Union::new(true);
+    /// let marker = value.type_marker();
+    /// let number = Union::new_marked(7u32, marker);
+    /// assert_eq!(number.get::<u32>(), Some(&7));
+    /// ```
     pub fn type_marker(&self) -> PhantomData<L> {
         PhantomData
     }
 
-    /// Borrows the value if `T` is active.
+    /// Returns an immutable reference to the value if the `Union` is inhabited
+    /// with the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let value: Union![u32, bool] = Union::new(true);
+    /// assert_eq!(value.get::<bool>(), Some(&true));
+    /// assert_eq!(value.get::<u32>(), None);
+    /// ```
     pub fn get<T: Element>(&self) -> Option<&T>
     where
         L: UnionOf<T>,
@@ -163,7 +236,18 @@ impl<L: UnionList> Union<L> {
         self.0.get::<T, L::Tag>()
     }
 
-    /// Mutably borrows the value if `T` is active.
+    /// Returns a mutable reference to the value if the `Union` is inhabited
+    /// with the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let mut value: Union![u32, bool] = Union::new(7u32);
+    /// *value.get_mut::<u32>().unwrap() += 1;
+    /// assert_eq!(value.get::<u32>(), Some(&8));
+    /// ```
     pub fn get_mut<T: Element>(&mut self) -> Option<&mut T>
     where
         L: UnionOf<T>,
@@ -171,7 +255,23 @@ impl<L: UnionList> Union<L> {
         self.0.get_mut::<T, L::Tag>()
     }
 
-    /// Mutably borrows the value if `T` is active, pinned in place.
+    /// Returns a pinned mutable reference to the value if the `Union` is
+    /// inhabited with the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::{marker::PhantomPinned, pin::pin};
+    /// use tsum::{Union, union::Element};
+    ///
+    /// #[derive(Element)]
+    /// struct Pinned(PhantomPinned);
+    ///
+    /// let value: Union![Pinned, bool] = Union::new(Pinned(PhantomPinned));
+    /// let mut value = pin!(value);
+    /// assert!(value.as_mut().get_pin_mut::<bool>().is_none());
+    /// assert!(value.as_mut().get_pin_mut::<Pinned>().is_some());
+    /// ```
     pub fn get_pin_mut<T: Element>(self: Pin<&mut Self>) -> Option<Pin<&mut T>>
     where
         L: UnionOf<T>,
@@ -181,7 +281,22 @@ impl<L: UnionList> Union<L> {
         unsafe { self.map_unchecked_mut(|t| &mut t.0) }.get_pin_mut::<T, L::Tag>()
     }
 
-    /// Calls `f` with a reference if `T` is active, then returns the union.
+    /// Performs the given function if the `Union` is inhabited with the
+    /// specified type.
+    ///
+    /// This function can be called in chain.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let value: Union![u32, bool] = Union::new(true);
+    /// let mut seen = false;
+    /// let value = value.inspect(|flag: &bool| seen = *flag);
+    /// assert!(seen);
+    /// assert_eq!(value.get::<bool>(), Some(&true));
+    /// ```
     pub fn inspect<T: Element, F>(self, f: F) -> Self
     where
         L: UnionOf<T>,
@@ -190,8 +305,12 @@ impl<L: UnionList> Union<L> {
         Self(self.0.inspect::<T, L::Tag, _>(f))
     }
 
-    /// Calls `f` with a mutable reference if `T` is active, then returns the
-    /// union.
+    /// Performs the given function if the `Union` is inhabited with the
+    /// specified type.
+    ///
+    /// This function can be called in chain.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use tsum::Union;
@@ -210,8 +329,11 @@ impl<L: UnionList> Union<L> {
         Self(self.0.inspect_mut::<T, L::Tag, _>(f))
     }
 
-    /// Moves out the value if `T` is active. Otherwise returns the union of the
-    /// [remaining members](Rem).
+    /// Returns the value if the `Union` is inhabited with the specified type.
+    ///
+    /// Otherwise, returns a `Union` of [its remainder types](Rem).
+    ///
+    /// # Examples
     ///
     /// ```
     /// use tsum::Union;
@@ -227,8 +349,12 @@ impl<L: UnionList> Union<L> {
         self.0.try_unwrap::<T, L::Tag>().map_err(Union)
     }
 
-    /// Moves the value into `L2` if it belongs there, or into the [remaining
-    /// list](ListRem) otherwise. The members of `L2` may appear in any order.
+    /// Returns a `Union` of specified list of type narrowed from the callee's
+    /// type list if the `Union` is inhabited within the specified type list.
+    ///
+    /// Otherwise, returns a `Union` of [its remainder types](ListRem).
+    ///
+    /// # Examples
     ///
     /// ```
     /// use tsum::{T, Union};
@@ -248,8 +374,12 @@ impl<L: UnionList> Union<L> {
             .map_err(Union)
     }
 
-    /// Moves the value into a list containing all members of `L` in any order.
-    /// See [`Union::narrow`] for the inverse operation.
+    /// Returns a `Union` of specified list of type broadened from the callee's
+    /// type list.
+    ///
+    /// Unlike [`Union::narrow`], this function always succeed.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use tsum::Union;

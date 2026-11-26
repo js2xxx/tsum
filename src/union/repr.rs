@@ -5,16 +5,26 @@ use crate::{
     private::Sealed,
     sum::{
         index::{Index, UInt, UTerm},
-        repr::{Split, SplitList, SumList},
+        repr::{SumList, SumOf, SumOfList},
     },
 };
 
-/// A tuple list of distinct [elements](Element) with tagged union storage.
+/// A list of distinct [elements](Element) that can be used in
+/// [`Union`](super::Union). Use this bound for a generic member list and
+/// [`UnionOf`] when an operation requires a particular member. Write concrete
+/// lists with [`T!`](macro@crate::T).
 ///
-/// This trait is sealed to `()` and `(Head, Tail)` with a `UnionList` tail
-/// whose members have IDs distinct from `Head`.
+/// # Examples
+///
+/// ```
+/// use tsum::{T, union::UnionList};
+///
+/// type Members = T![u32, bool];
+/// assert_eq!(Members::LEN, 2);
+/// assert_eq!(<() as UnionList>::LEN, 0);
+/// ```
 pub trait UnionList: ElementList + Sealed {
-    /// The positional sum list used for storage and tag dispatch.
+    /// The ordered list of member types.
     #[doc(hidden)]
     type Members: SumList;
 
@@ -38,7 +48,21 @@ where
     const LEN: usize = Tail::LEN + 1;
 }
 
-/// A union list containing the element `E`.
+/// A union list containing `E`. Use this bound to construct, borrow, or
+/// extract an `E` from a generic [`Union`](super::Union).
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{Union, union::UnionOf};
+///
+/// fn flag<L: UnionOf<bool>>(value: &Union<L>) -> Option<&bool> {
+///     value.get::<bool>()
+/// }
+///
+/// let value: Union![u32, bool] = Union::new(false);
+/// assert_eq!(flag(&value), Some(&false));
+/// ```
 pub trait UnionOf<E: Element>: UnionOfImp<E, !, Output = E> {}
 impl<E: Element, L> UnionOf<E> for L where L: UnionOfImp<E, !, Output = E> {}
 
@@ -46,7 +70,7 @@ impl<E: Element, L> UnionOf<E> for L where L: UnionOfImp<E, !, Output = E> {}
 // equality with Output before any operation can use the candidate's index.
 pub trait UnionOfImp<E: Element, Cond>
 where
-    Self: UnionList<Members: Split<Self::Output, Self::Tag, Remainder = Members<Self::Remainder>>>,
+    Self: UnionList<Members: SumOf<Self::Output, Self::Tag, Remainder = Members<Self::Remainder>>>,
 {
     type Index: Unsigned;
     type Tag: Index;
@@ -91,7 +115,22 @@ where
     type Remainder = (Head, Tail::Remainder);
 }
 
-/// A union list containing all members of `L`, in any order.
+/// A union list containing every member of `L`, in any order. Use this bound
+/// for a generic conversion with [`Union::broaden`](super::Union::broaden) or
+/// [`Union::narrow`](super::Union::narrow).
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{T, Union, union::UnionOfList};
+///
+/// fn widen<L: UnionOfList<T![bool, char]>>(value: Union![bool, char]) -> Union<L> {
+///     value.broaden()
+/// }
+///
+/// let value: Union![char, u32, bool] = widen(Union::new('x'));
+/// assert_eq!(value.get::<char>(), Some(&'x'));
+/// ```
 pub trait UnionOfList<L: UnionList>: UnionOfListImp<L, Output = L> {}
 impl<L: UnionList, R> UnionOfList<L> for R where R: UnionOfListImp<L, Output = L> {}
 
@@ -102,7 +141,7 @@ impl<Head: Unsigned, Tail: UnsignedList> UnsignedList for (Head, Tail) {}
 pub trait UnionOfListImp<L: UnionList>
 where
     Self: UnionList<
-        Members: SplitList<Members<Self::Output>, Self::Map, Remainder = Members<Self::Remainder>>,
+        Members: SumOfList<Members<Self::Output>, Self::Map, Remainder = Members<Self::Remainder>>,
     >,
 {
     type Indices: UnsignedList;

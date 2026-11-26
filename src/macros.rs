@@ -1,4 +1,7 @@
-/// Constructs a [`Sum`] type from a list of types.
+/// Declares an ordered [`Sum`] type.
+///
+/// Each entry is a distinct variant, and a type may appear more than once.
+/// `Sum![]` is the empty sum.
 ///
 /// # Examples
 ///
@@ -7,6 +10,7 @@
 ///
 /// type MySum = Sum![i32, u32, f64];
 /// let s: MySum = Sum::new(42u32);
+/// assert_eq!(s.get::<u32, _>(), Some(&42));
 /// ```
 ///
 /// [`Sum`]: crate::sum::Sum
@@ -15,7 +19,10 @@ macro_rules! Sum {
     [$($t:ty),* $(,)?] => [$crate::sum::Sum::<$crate::T![$($t,)*]>];
 }
 
-/// Constructs a [`Union`](struct@crate::Union) type from a list of types.
+/// Declares a [`Union`](struct@crate::Union) type.
+///
+/// Each member must implement [`Element`](trait@crate::union::Element) and have
+/// a distinct element ID. `Union![]` is the empty union.
 ///
 /// # Examples
 ///
@@ -24,13 +31,18 @@ macro_rules! Sum {
 ///
 /// type MyUnion = Union![i32, u32, f64];
 /// let u: MyUnion = Union::new(42u32);
+/// assert_eq!(u.get::<u32>(), Some(&42));
 /// ```
 #[macro_export]
 macro_rules! Union {
     [$($t:ty),* $(,)?] => [$crate::union::Union::<$crate::T![$($t,)*]>];
 }
 
-/// Constructs a tuple list (heterogeneous list) type from a list of types.
+/// Names a tuple list of types.
+///
+/// Use it for a subset in `value.narrow::<T![A, B], _>()` on a
+/// [`Sum`](struct@crate::Sum), or as the member list in `Union<T![A, B]>`.
+/// `T![]` is `()`.
 ///
 /// The value version of the macro is [`t`].
 ///
@@ -50,7 +62,9 @@ macro_rules! T {
     [$head:ty $(, $t:ty)* $(,)?] => [($head, $crate::T!($($t,)*))];
 }
 
-/// Constructs a tuple list (heterogeneous list) value from a list of values.
+/// Builds a tuple list of values in the given order.
+///
+/// `t![]` evaluates to `()`.
 ///
 /// The type version of the macro is [`T`].
 ///
@@ -59,8 +73,8 @@ macro_rules! T {
 /// ```rust
 /// use tsum::t;
 ///
-/// type MyList = (i32, (u32, (f64, ())));
-/// let list: MyList = t![42i32, 42u32, 42.0f64];
+/// let list: tsum::T![i32, bool] = t![42i32, true];
+/// assert_eq!(list, (42, (true, ())));
 /// ```
 ///
 /// [`T`]: crate::T

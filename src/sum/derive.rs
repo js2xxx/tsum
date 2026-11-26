@@ -1,5 +1,10 @@
 use core::{
-    any::{TypeId, type_name}, fmt, hash::Hasher, iter::FusedIterator, mem::ManuallyDrop, pin::Pin,
+    any::{TypeId, type_name},
+    fmt,
+    hash::Hasher,
+    iter::FusedIterator,
+    mem::ManuallyDrop,
+    pin::Pin,
 };
 
 use super::repr::{Cons, Nil, SumList};
@@ -344,11 +349,7 @@ where
 
 pub trait SumFusedIterator: SumList + SumIterator {}
 
-impl<Head> SumFusedIterator for (Head, ())
-where
-    Head: FusedIterator,
-{
-}
+impl<Head> SumFusedIterator for (Head, ()) where Head: FusedIterator {}
 
 impl<Head, THead, Tail> SumFusedIterator for (Head, (THead, Tail))
 where

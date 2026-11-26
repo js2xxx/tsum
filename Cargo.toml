@@ -17,7 +17,7 @@ edition = "2024"
 description = "A type-level sum & union type library for Rust"
 repository = "https://github.com/js2xxx/tsum"
 license = "MIT OR Apache-2.0"
-keywords = ["sum type", "type-level", "type-level programming", "union type"]
+keywords = ["sum-type", "type-level", "type-level-programming", "union-type"]
 categories = ["data-structures", "type-level"]
 
 [dependencies]

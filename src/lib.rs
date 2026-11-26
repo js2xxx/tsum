@@ -1,4 +1,22 @@
-//! The TRUE generic sum & union types for Rust.
+//! Values that hold one member of a list of Rust types.
+//!
+//! Use [`Sum!`](macro@Sum) for ordered variants, including repeated types.
+//! Use [`Union!`](macro@Union) for distinct [`Element`](trait@union::Element)
+//! types that you want to select by type alone. Construct a value with `new`,
+//! borrow its active member with `get`, or consume it with [`match_sum!`]
+//! or [`match_union!`].
+//!
+//! # Examples
+//!
+//! ```
+//! use tsum::{Sum, Union};
+//!
+//! let message: Sum![String, u32] = Sum::new(String::from("ready"));
+//! assert_eq!(message.get::<String, _>().map(String::as_str), Some("ready"));
+//!
+//! let setting: Union![bool, u32] = Union::new(3u32);
+//! assert_eq!(setting.try_unwrap::<u32>(), Ok(3));
+//! ```
 
 #![no_std]
 #![deny(future_incompatible)]
@@ -20,38 +38,46 @@ mod private;
 pub mod sum;
 pub mod union;
 
-/// Matches a [`Sum`](struct@Sum) by its active member and a pattern for its
-/// value.
+/// Consumes a [`Sum`](struct@Sum) and returns the result of the first matching
+/// arm. Use a struct pattern to name a member type or a suffixed numeric
+/// literal such as `42u32`. Put guards on typed arms. Use a final,
+/// unconditional `_` if any member is covered only by literals or guards.
 ///
 /// # Examples
 ///
-/// ```rust
-/// use tsum::{Sum, T, match_sum};
+/// ```
+/// use tsum::{Sum, match_sum};
 ///
-/// type MySum = Sum![u32, String, f64];
-/// let sum: MySum = Sum::new(42u32);
-/// let result = match_sum!(match sum {
-///     0u32 => "zero",
-///     42u32 => "the answer",
-///     s @ String { .. } => "a string",
-///     123f64 => "a float",
-///     _ => "other",
+/// struct Label(String);
+/// let value: Sum![u32, Label] = Sum::new(Label(String::from("ready")));
+/// let text = match_sum!(match value {
+///     0u32 => String::from("zero"),
+///     Label(text) => text,
+///     _ => String::from("other number"),
 /// });
-/// assert_eq!(result, "the answer");
+/// assert_eq!(text, "ready");
 /// ```
 pub use tsum_macros::match_sum;
-/// Matches a [`Union`](struct@Union) by its active member and a pattern for its
-/// value.
+/// Consumes a [`Union`](struct@Union) and returns the result of the first
+/// matching arm. Use a member's struct pattern or a typed literal to select
+/// it. Put guards on typed arms and use a final, unconditional `_` to handle
+/// the rest.
+///
+/// # Examples
 ///
 /// ```
-/// use tsum::{Union, match_union};
+/// use tsum::{Union, match_union, union::Element};
 ///
-/// let value: Union![u32, bool] = Union::new(42u32);
-/// let answer = match_union!(match value {
-///     42u32 => "forty-two",
-///     _ => "other",
+/// #[derive(Element)]
+/// struct Port(u16);
+///
+/// let value: Union![Port, bool] = Union::new(Port(443));
+/// let name = match_union!(match value {
+///     Port(port) if port == 443 => "https",
+///     Port(_) => "other port",
+///     _ => "flag",
 /// });
-/// assert_eq!(answer, "forty-two");
+/// assert_eq!(name, "https");
 /// ```
 pub use tsum_macros::match_union;
 

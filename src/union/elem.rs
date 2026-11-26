@@ -1,6 +1,6 @@
 use typenum::{Bit, IsEqual, Unsigned};
 
-/// A type with a type-level ID for membership tests in [`Union`](super::Union).
+/// A type that can be stored in a [`Union`](super::Union).
 ///
 /// Use [`#[derive(Element)]`](derive@super::Element) on a local type.
 /// Instantiations of the same derived generic type share an ID. A union
@@ -27,12 +27,24 @@ pub unsafe trait Element {
     type Id: Unsigned + IsEqual<Output = typenum::B1> + typenum::Cmp<Output = typenum::Equal>;
 }
 
-/// Compares the element IDs of `Self` and `F`.
+/// Compares the element IDs of `Self` and `F`. Use [`Eq`](tyalias@Eq) to name
+/// the result or `ElemEq<F, Output = typenum::B1>` to require matching IDs in a
+/// bound.
 pub trait ElemEq<F> {
     /// [`typenum::B1`] for equal IDs, or [`typenum::B0`] otherwise.
     type Output: Bit;
 }
-/// The result bit of comparing the IDs of `F` and `G`.
+/// The result of comparing the element IDs of `F` and `G`.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::union::Eq;
+/// use typenum::Bit;
+///
+/// assert!(Eq::<bool, bool>::to_bool());
+/// assert!(!Eq::<bool, u32>::to_bool());
+/// ```
 pub type Eq<F, G> = <F as ElemEq<G>>::Output;
 
 impl<E, F> ElemEq<F> for E
@@ -43,13 +55,26 @@ where
     type Output = typenum::Eq<F::Id, E::Id>;
 }
 
-/// Tests whether an element list contains the ID of `E`.
+/// Tests whether a list contains the ID of `E`. Use [`Contains`] to name the
+/// result or [`UnionOf`](super::UnionOf) to access a value of type `E`.
 pub trait ElemContains<E> {
     /// [`typenum::B1`] when the ID occurs in the list, or [`typenum::B0`]
     /// otherwise.
     type Output: Bit;
 }
-/// The result bit of looking up the ID of `E` in `L`.
+/// The membership bit for the ID of `E` in `L`. It depends only on the member
+/// list, regardless of which value a union currently holds.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{T, union::Contains};
+/// use typenum::Bit;
+///
+/// type Members = T![char, bool];
+/// assert!(Contains::<bool, Members>::to_bool());
+/// assert!(!Contains::<u32, Members>::to_bool());
+/// ```
 pub type Contains<E, L> = <L as ElemContains<E>>::Output;
 
 impl<E> ElemContains<E> for () {
@@ -65,10 +90,9 @@ where
     type Output = typenum::Or<Eq<E, Head>, Tail::Output>;
 }
 
-/// A tuple list of [elements](Element) with pairwise distinct IDs.
-///
-/// The empty list is `()`. A nonempty list is `(Head, Tail)`, where `Tail`
-/// is an element list. Use [`crate::T!`] to spell these lists.
+/// A list of [elements](Element) with distinct IDs. Write it with
+/// [`T!`](macro@crate::T) and use [`Insert`] or [`Merge`] to combine lists.
+/// Use [`UnionList`](super::UnionList) when declaring a generic union value.
 pub trait ElementList {}
 
 impl ElementList for () {}
@@ -80,13 +104,26 @@ where
 {
 }
 
-/// Inserts `E` at the head of a list if its ID is absent.
-/// The default `Cond` selects the appropriate case using [`Contains`].
+/// Adds `E` at the front if its ID is absent. Use `L: ElemInsert<E>` in a
+/// generic bound and [`Insert<L, E>`](Insert) to name the resulting list.
 pub trait ElemInsert<E: Element, Cond = !>: ElementList {
     /// The resulting list, which contains the ID of `E` once.
     type Output: ElementList;
 }
 /// The list obtained by prepending `E` to `L` if its ID is absent.
+/// Inserting an existing member preserves its position.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{T, Union, union::Insert};
+///
+/// type Members = T![bool, char];
+/// let first: Union<Insert<Members, u32>> = Union::new(7u32);
+/// let _: Union![u32, bool, char] = first;
+/// let same: Union<Insert<Members, char>> = Union::new('a');
+/// let _: Union![bool, char] = same;
+/// ```
 pub type Insert<L, E> = <L as ElemInsert<E>>::Output;
 
 impl<E, L> ElemInsert<E, !> for L
@@ -113,13 +150,16 @@ where
     type Output = L;
 }
 
-/// Inserts the members of `L2` into `Self`, visiting `L2` from head to tail.
+/// Combines two lists of elements. Use `L: ElemMerge<R>` in a generic
+/// bound and [`Merge<L, R>`](Merge) to name the resulting list.
 pub trait ElemMerge<L2: ElementList>: ElementList {
     /// The merged list. Newly inserted members appear in reverse order before
     /// `Self`.
     type Output: ElementList;
 }
 /// The list obtained by [merging](ElemMerge) `L2` into `L1`.
+///
+/// # Examples
 ///
 /// ```
 /// use tsum::{T, Union, union::Merge};

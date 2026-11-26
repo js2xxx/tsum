@@ -1,72 +1,61 @@
-//! The module dealing with the underlying representation of the [`Sum`] type.
+//! Type-list bounds for generic functions that accept
+//! [`Sum`](struct@crate::Sum).
 //!
-//! # Implementation details
+//! Use [`SumList`] for an arbitrary list, [`SumOf`] to require a member at a
+//! particular position, and [`SumOfList`] to require a subset.
 //!
-//! This crate defines a sum type by hand-written tagged unions. In other words,
-//! the memory layout of a sum type resembles a tagged union:
+//! # Examples
 //!
-//! ```rust,no_run
-//! # use core::convert::Infallible;
-//! # use core::mem::ManuallyDrop;
-//!
-//! struct Nil(Infallible);
-//! union Cons<T, Next> {
-//!     data: ManuallyDrop<T>,
-//!     next: ManuallyDrop<Next>,
-//! }
-//!
-//! // For example only. Not actually defined.
-//! struct RawSum2<T1, T2> {
-//!     tag: u8,
-//!     data: Cons<T1, Cons<T2, Nil>>,
-//! }
 //! ```
+//! use tsum::{Sum, sum::{index::Index, repr::SumOf}};
 //!
-//! And all the traits are implemented upon this layout.
+//! fn active_number<L, U>(value: &Sum<L>) -> Option<&u32>
+//! where
+//!     U: Index,
+//!     L: SumOf<u32, U>,
+//! {
+//!     value.get::<u32, U>()
+//! }
 //!
-//! See the source code for more details.
-//!
-//! [`Sum`]: crate::sum::Sum
+//! let value: Sum![bool, u32] = Sum::new(7u32);
+//! assert_eq!(active_number(&value), Some(&7));
+//! ```
 
 use core::{convert::Infallible, mem::ManuallyDrop};
 
 use super::{
-    NarrowRem, Rem,
+    ListRem, Rem,
     index::{Index, U1, UInt, UTerm},
     tag::{Tag, TagForIndex},
 };
-use crate::private::{Sealed, SealedSplit, SealedSplitList};
+use crate::private::{Sealed, SealedSumOf, SealedSumOfList};
 
-/// The terminator type of the underlying union of the [`Sum`] type.
-///
-/// [`Sum`]: crate::sum::Sum
+/// The uninhabited representation of an empty sum. Use `Sum![]` to name the
+/// sum itself and [`Sum::unreachable`](crate::Sum::unreachable) to consume it.
 pub struct Nil(pub(super) Infallible);
 
-/// The accumulator type of the underlying union of the [`Sum`] type.
-///
-/// [`Sum`]: crate::sum::Sum
+/// The representation of a nonempty sum. To declare and construct a value,
+/// use [`Sum!`](macro@crate::Sum) and [`Sum::new`](crate::Sum::new).
 #[repr(C)]
 pub union Cons<T, U> {
     pub(super) data: ManuallyDrop<T>,
     pub(super) next: ManuallyDrop<U>,
 }
 
-/// A tuple list with tagged storage for [`Sum`].
+/// A valid ordered member list for [`Sum`](struct@crate::Sum).
 ///
-/// This trait is sealed to `()` and `(Head, Tail)` with a `SumList` tail.
-/// The tag is the zero-based position of the active member. The representation
-/// stores that member at offset zero with its required size and alignment.
-///
-/// [`Sum`]: crate::sum::Sum
+/// Lists use `()` for the empty list and `(Head, Tail)` for a member followed
+/// by another list. Write the list itself with [`T!`](macro@crate::T), or use
+/// [`Sum!`](macro@crate::Sum) to name the sum containing one of its members.
 pub trait SumList: Count + Sealed {
-    /// Storage for the discriminant: `()` for up to one member, `u8` for
-    /// 2 through 256 members, and `usize` for larger lists.
+    /// The storage type selected for the active member position.
     type Discriminant: Tag;
 
-    /// The underlying representation of the `Sum` type.
+    /// The representation associated with the list.
     type Repr;
 
-    /// The index tag mapping from the type list to the `Sum` type.
+    /// A tuple list with one copy of `U` for each member, in list order.
+    /// For example, a two-member list has `Tags<U> = (U, (U, ()))`.
     type Tags<U>;
 
     /// # Safety
@@ -103,11 +92,12 @@ where
     }
 }
 
-/// A tuple list containing `T` at position `U`.
+/// Selects the occurrence of `T` at position `U` in a member list.
 ///
-/// This sealed trait preserves the order of the other members when removing
-/// or replacing `T`.
-pub trait Split<T, U: Index>: SumList + SealedSplit<T, U> {
+/// The associated types describe the list after removing that occurrence or
+/// replacing it with another type. This trait is sealed and is primarily a
+/// bound for generic APIs.
+pub trait SumOf<T, U: Index>: SumList + SealedSumOf<T, U> {
     #[doc(hidden)]
     fn from_data(data: T) -> Self::Repr;
 
@@ -122,17 +112,15 @@ pub trait Split<T, U: Index>: SumList + SealedSplit<T, U> {
         this.cast()
     }
 
-    /// The remainder type list from splitting type list `Self` with type `T`
-    /// and its index tag `U`.
+    /// The list left after removing the selected occurrence.
     type Remainder: SumList;
 
-    /// The remainder index tag map from splitting type list `Self` with type
-    /// `T` and its index tag `U`.
+    /// The index map for broadening the remainder back into the original list.
+    /// See [`RemTags`](crate::sum::RemTags) for an example.
     type RemainderTags;
 
-    /// The type list calculated by substituting type list `Self` with type `T`
-    /// and its index tag `U`.
-    type Substitute<T2>: Split<T2, U>;
+    /// The list obtained by replacing the selected occurrence with `T2`.
+    type Substitute<T2>: SumOf<T2, U>;
 
     #[doc(hidden)]
     fn from_remainder(tag: usize) -> usize;
@@ -141,7 +129,7 @@ pub trait Split<T, U: Index>: SumList + SealedSplit<T, U> {
     fn try_unwrap(tag: usize) -> Result<(), usize>;
 }
 
-impl<Head, Tail> Split<Head, UTerm> for (Head, Tail)
+impl<Head, Tail> SumOf<Head, UTerm> for (Head, Tail)
 where
     Tail: SumList,
 {
@@ -169,9 +157,9 @@ where
     }
 }
 
-impl<Head, Tail, T, U: Index> Split<T, UInt<U>> for (Head, Tail)
+impl<Head, Tail, T, U: Index> SumOf<T, UInt<U>> for (Head, Tail)
 where
-    Tail: Split<T, U>,
+    Tail: SumOf<T, U>,
 {
     fn from_data(data: T) -> Self::Repr {
         Cons {
@@ -183,8 +171,8 @@ where
         unsafe { Tail::into_data_unchecked(ManuallyDrop::into_inner(this.next)) }
     }
 
-    type Remainder = (Head, <Tail as Split<T, U>>::Remainder);
-    type RemainderTags = (UTerm, <Tail as Split<T, U>>::RemainderTags);
+    type Remainder = (Head, <Tail as SumOf<T, U>>::Remainder);
+    type RemainderTags = (UTerm, <Tail as SumOf<T, U>>::RemainderTags);
     type Substitute<T2> = (Head, Tail::Substitute<T2>);
 
     fn from_remainder(tag: usize) -> usize {
@@ -205,9 +193,20 @@ where
     }
 }
 
-/// Counts the number of elements in a type list using index tags.
+/// The number of entries in a member list, available as a type.
+/// Use [`Index::TAG`] to read its numeric value.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{T, sum::{index::Index, repr::Count}};
+///
+/// type Length = <T![u8, bool, u8] as Count>::Count;
+/// assert_eq!(Length::TAG, 3);
+/// ```
 pub trait Count: Sealed {
-    /// The number of elements in the type list, measured by index tags.
+    /// The number of members. The empty list has count zero and repeated types
+    /// each contribute one.
     type Count: Index + TagForIndex;
 }
 
@@ -222,13 +221,27 @@ where
     type Count = UInt<Tail::Count>;
 }
 
-/// A tuple list that can be partitioned into `TList` and its remainder.
+/// A list containing every occurrence requested by `TList`. Use this bound
+/// for [`Sum::narrow`](crate::Sum::narrow) or
+/// [`Sum::broaden`](crate::Sum::broaden).
 ///
-/// This sealed trait uses `UList` to identify each selected occurrence,
-/// including when `TList` reorders members.
-pub trait SplitList<TList: SumList, UList>: SumList + SealedSplitList<TList, UList> {
-    /// The remainder type list from splitting type list `Self` with type list
-    /// `TList` and its index tag map `UList`.
+/// Read `UList` from left to right. Each index selects one member from the
+/// list **remaining after the previous selections**. Rust infers this map
+/// when each selection is unambiguous.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{Sum, T, sum::index::{U0, U1, U2}};
+///
+/// type Source = Sum![u8, bool, u8];
+/// let value = Source::new::<_, U2>(9u8);
+/// // Select the last u8, then bool at index 1 in the remaining [u8, bool].
+/// let selected = value.narrow::<T![u8, bool], T![U2, U1]>().unwrap();
+/// assert_eq!(selected.get::<u8, U0>(), Some(&9));
+/// ```
+pub trait SumOfList<TList: SumList, UList>: SumList + SealedSumOfList<TList, UList> {
+    /// The members not selected for `TList`, in their source order.
     type Remainder: SumList;
 
     #[doc(hidden)]
@@ -238,7 +251,7 @@ pub trait SplitList<TList: SumList, UList>: SumList + SealedSplitList<TList, ULi
     fn narrow_tag(tag: usize) -> Result<usize, usize>;
 }
 
-impl<T: SumList> SplitList<(), ()> for T {
+impl<T: SumList> SumOfList<(), ()> for T {
     type Remainder = Self;
 
     fn broaden_tag(tag: usize) -> usize {
@@ -251,17 +264,17 @@ impl<T: SumList> SplitList<(), ()> for T {
 }
 
 impl<SubHead, SubTail, SuperHead, SuperTail, HeadIndex: Index, TailIndex>
-    SplitList<(SubHead, SubTail), (HeadIndex, TailIndex)> for (SuperHead, SuperTail)
+    SumOfList<(SubHead, SubTail), (HeadIndex, TailIndex)> for (SuperHead, SuperTail)
 where
     SubTail: SumList,
     SuperTail: SumList,
-    Self: Split<SubHead, HeadIndex>,
-    Rem<Self, SubHead, HeadIndex>: SplitList<SubTail, TailIndex>,
+    Self: SumOf<SubHead, HeadIndex>,
+    Rem<Self, SubHead, HeadIndex>: SumOfList<SubTail, TailIndex>,
 {
-    type Remainder = NarrowRem<Rem<Self, SubHead, HeadIndex>, SubTail, TailIndex>;
+    type Remainder = ListRem<Rem<Self, SubHead, HeadIndex>, SubTail, TailIndex>;
 
     fn broaden_tag(tag: usize) -> usize {
-        match <(SubHead, SubTail) as Split<SubHead, UTerm>>::try_unwrap(tag) {
+        match <(SubHead, SubTail) as SumOf<SubHead, UTerm>>::try_unwrap(tag) {
             Ok(()) => HeadIndex::TAG,
             Err(remainder) => {
                 let ret = Rem::<Self, SubHead, HeadIndex>::broaden_tag(remainder);
@@ -275,7 +288,7 @@ where
             Ok(()) => 0,
             Err(remainder) => {
                 let ret = Rem::<Self, SubHead, HeadIndex>::narrow_tag(remainder)?;
-                <(SubHead, SubTail) as Split<SubHead, UTerm>>::from_remainder(ret)
+                <(SubHead, SubTail) as SumOf<SubHead, UTerm>>::from_remainder(ret)
             }
         })
     }

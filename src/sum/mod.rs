@@ -1,4 +1,4 @@
-//! THE true generic sum type for Rust.
+//! The generic sum type for Rust.
 //!
 //! # Usage
 //!
@@ -65,10 +65,6 @@
 //! assert!(sum != Sum::new(42u32));
 //! assert_eq!(format!("{sum}"), "42");
 //! ```
-//!
-//! # Implementation details
-//!
-//! See the [`repr`] module for more details.
 
 use core::{
     fmt,
@@ -86,34 +82,47 @@ pub mod repr;
 mod tag;
 use self::{index::Index, tag::Tag};
 
-/// The true generic representation of a sum type.
+/// A value of one member of the ordered type list `S`.
 ///
-/// See the [crate-level] documentation for more information.
+/// Each occurrence is a distinct variant, even when two members have the same
+/// Rust type. Use [`Sum!`](macro@crate::Sum) to write a concrete type, or use
+/// [`SumList`](repr::SumList) as a bound for a generic list.
+///
+/// Cloning and formatting use the active value. Comparisons order different
+/// variants by position and compare values within a variant. Hashing includes
+/// the position and value. Each operation requires the corresponding trait on
+/// all members.
+///
+/// A nonempty sum of iterators with the same item type implements [`Iterator`].
+/// It also supports double-ended, exact-size, and fused iteration when all
+/// members do. A nonempty sum of futures with the same output type can be
+/// awaited to obtain that output.
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```
 /// use tsum::Sum;
 ///
-/// let s: Sum![i32, u32, f64] = Sum::new(42u32);
+/// type Message = Sum![String, u32];
+/// let message = Message::new(String::from("ready"));
+/// assert_eq!(message.get::<String, _>().map(String::as_str), Some("ready"));
+/// assert_eq!(message.get::<u32, _>(), None);
 /// ```
-///
-/// [crate-level]: crate
 pub struct Sum<S: repr::SumList> {
     tag: S::Discriminant,
     data: ManuallyDrop<S::Repr>,
 }
 
 impl<T> From<T> for Sum<(T, ())> {
-    /// Constructs a `Sum` of one type from a value.
+    /// Wraps a value in a single-member sum.
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// use tsum::Sum;
     ///
-    /// let s: Sum![i32] = 42.into();
-    /// assert_eq!(*s, 42);
+    /// let value: Sum![String] = String::from("ready").into();
+    /// assert_eq!(value.as_str(), "ready");
     /// ```
     fn from(value: T) -> Self {
         Sum::new(value)
@@ -123,52 +132,50 @@ impl<T> From<T> for Sum<(T, ())> {
 impl<T> Deref for Sum<(T, ())> {
     type Target = T;
 
-    /// Dereferences the `Sum` immutably to its inner value.
-    ///
-    /// This function can only be called on `Sum`s of one type.
+    /// Borrows the only member of a single-member sum.
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// use tsum::Sum;
     ///
-    /// let s: Sum![i32] = 42.into();
-    /// assert_eq!(*s, 42);
+    /// let value: Sum![i32] = 42.into();
+    /// assert_eq!(*value, 42);
+    /// ```
     fn deref(&self) -> &Self::Target {
         unsafe { &self.data.data }
     }
 }
 
 impl<T> DerefMut for Sum<(T, ())> {
-    /// Dereferences the `Sum` mutably to its inner value.
-    ///
-    /// This function can only be called on `Sum`s of one type.
+    /// Mutably borrows the only member of a single-member sum.
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// use tsum::Sum;
     ///
-    /// let mut s: Sum![i32] = 42.into();
-    /// *s += 1;
-    /// assert_eq!(*s, 43);
+    /// let mut value: Sum![i32] = 42.into();
+    /// *value += 1;
+    /// assert_eq!(*value, 43);
+    /// ```
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut self.data.data }
     }
 }
 
 impl<T> Sum<(T, ())> {
-    /// Transforms the `Sum` type into its inner value.
-    ///
-    /// This function can only be called on `Sum`s of one type.
+    /// Consumes a single-member sum and returns its value.
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// use tsum::Sum;
     ///
-    /// let s: Sum![i32] = 42.into();
-    /// assert_eq!(s.into_inner(), 42);
+    /// let value: Sum![String] = String::from("ready").into();
+    /// let text: String = value.into_inner();
+    /// assert_eq!(text, "ready");
+    /// ```
     pub fn into_inner(self) -> T {
         let mut this = ManuallyDrop::new(self);
         // A singleton always has its head initialized.
@@ -229,14 +236,12 @@ impl<S: repr::SumList> Sum<S> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// use tsum::Sum;
     ///
-    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
-    /// assert_eq!(s.type_name(), "i32");
+    /// let value: Sum![u32, bool] = Sum::new(true);
+    /// assert_eq!(value.type_name(), core::any::type_name::<bool>());
     /// ```
-    ///
-    /// [`core::any::type_name`]: core::any::type_name
     pub fn type_name(&self) -> &'static str
     where
         S: derive::TypeMeta,
@@ -283,19 +288,22 @@ impl<S: repr::SumList> Sum<S> {
 }
 
 impl<S: repr::SumList> Sum<S> {
-    /// Constructs a new `Sum` from the given value.
+    /// Constructs the sum with `value` at position `U`.
+    ///
+    /// The index can be inferred when `T` occurs once. Specify it when several
+    /// members have the same type `T`.
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use tsum::Sum;
+    /// ```
+    /// use tsum::{Sum, sum::index::U1};
     ///
-    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
-    /// assert_eq!(s.get(), Some(&42i32));
+    /// let value = <Sum![u32, u32]>::new::<_, U1>(42u32);
+    /// assert_eq!(value.get::<u32, U1>(), Some(&42));
     /// ```
     pub fn new<T, U>(value: T) -> Self
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         Sum {
@@ -322,7 +330,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn new_marked<T, U>(value: T, _: PhantomData<S>) -> Self
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         Self::new(value)
@@ -360,7 +368,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn get<T, U>(&self) -> Option<&T>
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         (self.tag.index() == U::TAG).then(|| unsafe { &*S::as_ptr(&raw const *self.data) })
@@ -380,7 +388,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn get_mut<T, U>(&mut self) -> Option<&mut T>
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         (self.tag.index() == U::TAG)
@@ -404,7 +412,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn get_pin_mut<T, U>(self: Pin<&mut Self>) -> Option<Pin<&mut T>>
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         (self.tag.index() == U::TAG).then(|| unsafe {
@@ -430,7 +438,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn inspect<T, U, F>(self, f: F) -> Self
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
         F: FnOnce(&T),
     {
@@ -456,7 +464,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn inspect_mut<T, U, F>(mut self, f: F) -> Self
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
         F: FnOnce(&mut T),
     {
@@ -467,22 +475,35 @@ impl<S: repr::SumList> Sum<S> {
     }
 }
 
-/// The remainder type list from splitting type list `S` with type `T` and its
-/// index tag `U`.
-pub type Rem<S, T, U> = <S as repr::Split<T, U>>::Remainder;
+/// The members of `S` left after removing `T` at position `U`, in their
+/// original order. Use `Sum<Rem<S, T, U>>` to name the error from
+/// [`Sum::try_unwrap`].
+pub type Rem<S, T, U> = <S as repr::SumOf<T, U>>::Remainder;
 
-/// The remainder index tag map from splitting type list `S` with type `T` and
-/// its index tag `U`.
-pub type RemTags<S, T, U> = <S as repr::Split<T, U>>::RemainderTags;
+/// The index map for broadening [`Rem<S, T, U>`](Rem) back into `S`. Use it
+/// to restore the original positions when the list contains repeated types.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::{Sum, T, sum::{RemTags, index::{U0, U1}}};
+///
+/// type Pair = T![u8, u8];
+/// let value = Sum::<Pair>::new::<_, U1>(7u8);
+/// let remaining = value.try_unwrap::<u8, U0>().unwrap_err();
+/// let restored = remaining.broaden::<Pair, RemTags<Pair, u8, U0>>();
+/// assert_eq!(restored.get::<u8, U1>(), Some(&7));
+/// ```
+pub type RemTags<S, T, U> = <S as repr::SumOf<T, U>>::RemainderTags;
 
-/// The type list calculated by substituting type list `S` with type `T` and its
-/// index tag `U`.
-pub type Substitute<S, T, T2, U> = <S as repr::Split<T, U>>::Substitute<T2>;
+/// The member list of the sum returned by [`Sum::map`]. The occurrence of `T`
+/// at `U` becomes `T2` and all other positions are preserved.
+pub type Substitute<S, T, T2, U> = <S as repr::SumOf<T, U>>::Substitute<T2>;
 
 impl<S: repr::SumList> Sum<S> {
     /// Returns the value if the `Sum` is inhabited with the specified type.
     ///
-    /// Otherwise, returns a `Sum` of its remainder types.
+    /// Otherwise, returns a `Sum` of [its remainder types](Rem).
     ///
     /// # Examples
     ///
@@ -500,7 +521,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn try_unwrap<T, U>(self) -> Result<T, Sum<Rem<S, T, U>>>
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         match S::try_unwrap(self.tag.index()) {
@@ -534,7 +555,7 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn map<T, T2, U>(self, f: impl FnOnce(T) -> T2) -> Sum<Substitute<S, T, T2, U>>
     where
-        S: repr::Split<T, U>,
+        S: repr::SumOf<T, U>,
         U: Index,
     {
         let tag = self.tag.index();
@@ -542,7 +563,7 @@ impl<S: repr::SumList> Sum<S> {
             Ok(()) => {
                 let mut this = ManuallyDrop::new(self);
                 let data = f(unsafe { S::into_data_unchecked(ManuallyDrop::take(&mut this.data)) });
-                let data = <Substitute<S, T, T2, U> as repr::Split<T2, U>>::from_data(data);
+                let data = <Substitute<S, T, T2, U> as repr::SumOf<T2, U>>::from_data(data);
                 Sum {
                     tag: Tag::from_index(tag),
                     data: ManuallyDrop::new(data),
@@ -555,15 +576,16 @@ impl<S: repr::SumList> Sum<S> {
     }
 }
 
-/// The remainder type list from splitting type list `S` with type list `S2` and
-/// its index tag map `UMap`.
-pub type NarrowRem<S, S2, UMap> = <S as repr::SplitList<S2, UMap>>::Remainder;
+/// The member list in the `Err` branch of [`Sum::narrow`]. It contains the
+/// members of `S` left after selecting `S2` with `UMap`, in their original
+/// order.
+pub type ListRem<S, S2, UMap> = <S as repr::SumOfList<S2, UMap>>::Remainder;
 
 impl<S: repr::SumList> Sum<S> {
     /// Returns a `Sum` of specified list of type narrowed from the callee's
     /// type list if the `Sum` is inhabited within the specified type list.
     ///
-    /// Otherwise, returns a `Sum` of its remainder types.
+    /// Otherwise, returns a `Sum` of [its remainder types](ListRem).
     ///
     /// # Examples
     ///
@@ -576,14 +598,14 @@ impl<S: repr::SumList> Sum<S> {
     /// let s: Sum![i32, u64, String] = Sum::new(236u64);
     /// assert_eq!(s.narrow::<T![i32, String], _>(), Err(236u64.into()));
     /// ```
-    pub fn narrow<S2, UMap>(self) -> Result<Sum<S2>, Sum<NarrowRem<S, S2, UMap>>>
+    pub fn narrow<S2, UMap>(self) -> Result<Sum<S2>, Sum<ListRem<S, S2, UMap>>>
     where
-        S: repr::SplitList<S2, UMap>,
+        S: repr::SumOfList<S2, UMap>,
         S2: repr::SumList,
     {
         // Both tags designate the original active member in their respective
         // lists.
-        match <S as repr::SplitList<S2, UMap>>::narrow_tag(self.tag.index()) {
+        match <S as repr::SumOfList<S2, UMap>>::narrow_tag(self.tag.index()) {
             Ok(tag) => Ok(unsafe { self.retag(tag) }),
             Err(tag) => Err(unsafe { self.retag(tag) }),
         }
@@ -607,9 +629,9 @@ impl<S: repr::SumList> Sum<S> {
     /// ```
     pub fn broaden<S2, UMap>(self) -> Sum<S2>
     where
-        S2: repr::SplitList<S, UMap>,
+        S2: repr::SumOfList<S, UMap>,
     {
-        let tag = <S2 as repr::SplitList<S, UMap>>::broaden_tag(self.tag.index());
+        let tag = <S2 as repr::SumOfList<S, UMap>>::broaden_tag(self.tag.index());
         // The mapped tag selects the same member in the superset.
         unsafe { self.retag(tag) }
     }
@@ -704,6 +726,19 @@ impl<S: derive::SumHash> Hash for Sum<S> {
     }
 }
 
+/// Iterates over the active member, yielding the item type shared by all
+/// members.
+///
+/// # Examples
+///
+/// ```
+/// use tsum::Sum;
+///
+/// type Numbers = Sum![core::ops::Range<u8>, core::iter::Once<u8>];
+/// let mut numbers = Numbers::new(1u8..4);
+/// assert_eq!(numbers.next_back(), Some(3));
+/// assert_eq!(numbers.collect::<Vec<_>>(), vec![1, 2]);
+/// ```
 impl<S: derive::SumIterator> Iterator for Sum<S> {
     type Item = S::Item;
 
@@ -726,6 +761,24 @@ impl<S: derive::SumDoubleEndedIterator> DoubleEndedIterator for Sum<S> {
     }
 }
 
+/// Awaiting the sum polls the active future and yields the output type shared
+/// by all members. This lets different branches return different future types.
+///
+/// # Examples
+///
+/// ```
+/// use core::future::{Pending, Ready, pending, ready};
+/// use tsum::Sum;
+///
+/// async fn answer(available: bool) -> u32 {
+///     let response: Sum![Ready<u32>, Pending<u32>] = if available {
+///         Sum::new(ready(42))
+///     } else {
+///         Sum::new(pending::<u32>())
+///     };
+///     response.await
+/// }
+/// ```
 impl<S: derive::SumFuture> core::future::Future for Sum<S> {
     type Output = S::Output;
 
@@ -787,7 +840,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "sum tag exceeds usize")]
     fn inserting_a_member_checks_for_tag_overflow() {
-        <(bool, ()) as repr::Split<bool, U0>>::from_remainder(usize::MAX);
+        <(bool, ()) as repr::SumOf<bool, U0>>::from_remainder(usize::MAX);
     }
 
     #[test]

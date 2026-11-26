@@ -11,7 +11,20 @@ use super::{Union, UnionList};
 use crate::sum::{Sum, derive::TypeMeta};
 
 impl<L: UnionList<Members: TypeMeta>> Union<L> {
-    /// Returns the [`TypeId`] of the active member.
+    /// Returns the type ID of the inhabited value.
+    ///
+    /// The result of this function is different of calling [`TypeId::of`],
+    /// which returns the type ID of the `Union` type itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::any::TypeId;
+    /// use tsum::Union;
+    ///
+    /// let value: Union![u32, bool] = Union::new(true);
+    /// assert_eq!(value.type_id(), TypeId::of::<bool>());
+    /// ```
     pub fn type_id(&self) -> TypeId
     where
         L::Members: 'static,
@@ -19,12 +32,36 @@ impl<L: UnionList<Members: TypeMeta>> Union<L> {
         self.0.type_id()
     }
 
-    /// Returns the type name of the active member.
+    /// Returns the name of the type of the inhabited value.
+    ///
+    /// The result of this function is different of calling
+    /// [`core::any::type_name`], which returns the type name of the `Union`
+    /// type itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let value: Union![u32, bool] = Union::new(true);
+    /// assert_eq!(value.type_name(), core::any::type_name::<bool>());
+    /// ```
     pub fn type_name(&self) -> &'static str {
         self.0.type_name()
     }
 
-    /// Borrows the active value as [`Any`] for downcasting.
+    /// Coerces the reference of the inhabited value immutably into the dynamic
+    /// type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let value: Union![u32, bool] = Union::new(true);
+    /// assert_eq!(value.as_any().downcast_ref::<bool>(), Some(&true));
+    /// assert_eq!(value.as_any().downcast_ref::<u32>(), None);
+    /// ```
     pub fn as_any(&self) -> &dyn Any
     where
         L::Members: 'static,
@@ -32,17 +69,17 @@ impl<L: UnionList<Members: TypeMeta>> Union<L> {
         self.0.as_any()
     }
 
-    /// Mutably borrows the active value as [`Any`] for downcasting.
+    /// Coerces the reference of the inhabited value mutably into the dynamic
+    /// type.
+    ///
+    /// # Examples
     ///
     /// ```
-    /// use core::any::TypeId;
     /// use tsum::Union;
     ///
     /// let mut value: Union![bool, u32] = Union::new(7u32);
-    /// assert_eq!(value.type_name(), "u32");
-    /// assert_eq!(value.type_id(), TypeId::of::<u32>());
     /// *value.as_mut_any().downcast_mut::<u32>().unwrap() += 1;
-    /// assert_eq!(value.as_any().downcast_ref::<u32>(), Some(&8));
+    /// assert_eq!(value.get::<u32>(), Some(&8));
     /// ```
     pub fn as_mut_any(&mut self) -> &mut dyn Any
     where
