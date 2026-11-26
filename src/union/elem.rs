@@ -185,19 +185,27 @@ where
 
 // -------------------------
 // Trivial implementations
+mod impls {
+    use typenum::*;
 
-macro_rules! trivial_impl {
-    ($($t:ty => $id:ident),* $(,)?) => {
-        $(unsafe impl Element for $t {
-            type Id = typenum::$id;
-        })*
-    };
-}
+    use super::*;
 
-trivial_impl! {
-    i8 => U0, i16 => U1, i32 => U2, i64 => U3, isize => U4,
-    u8 => U5, u16 => U6, u32 => U7, u64 => U8, usize => U9,
-    f32 => U10, f64 => U11,
-    bool => U12, char => U13, &str => U14,
-    ! => U15, () => U16,
+    macro_rules! trivial_impl {
+        (@IMP $t:ty, $i:literal) => {
+            unsafe impl Element for $t {
+                type Id = ${concat(U, $i)};
+            }
+        };
+        ($($t:ty),* $(,)?) => {
+            $(trivial_impl!(@IMP $t, ${index()});)*
+        };
+    }
+
+    trivial_impl! {
+        i8, i16, i32, i64, i128, isize,
+        u8, u16, u32, u64, u128, usize,
+        f32, f64,
+        bool, char, &str,
+        !, (),
+    }
 }

@@ -202,3 +202,12 @@ where
         unsafe { self.map_unchecked_mut(|t| &mut t.0) }.poll(cx)
     }
 }
+
+impl<L: UnionList> core::error::Error for Union<L>
+where
+    Sum<L::Members>: core::error::Error,
+{
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        self.0.source()
+    }
+}

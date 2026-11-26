@@ -745,6 +745,10 @@ impl<S: derive::SumIterator> Iterator for Sum<S> {
     fn next(&mut self) -> Option<Self::Item> {
         unsafe { S::next(&mut self.data, self.tag.index()) }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { S::size_hint(&self.data, self.tag.index()) }
+    }
 }
 
 impl<S: derive::SumExactSizeIterator> ExactSizeIterator for Sum<S> {
@@ -779,7 +783,7 @@ impl<S: derive::SumDoubleEndedIterator> DoubleEndedIterator for Sum<S> {
 ///     response.await
 /// }
 /// ```
-impl<S: derive::SumFuture> core::future::Future for Sum<S> {
+impl<S: derive::SumFuture> Future for Sum<S> {
     type Output = S::Output;
 
     fn poll(
@@ -788,6 +792,12 @@ impl<S: derive::SumFuture> core::future::Future for Sum<S> {
     ) -> core::task::Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { S::poll(Pin::new_unchecked(&mut this.data), this.tag.index(), cx) }
+    }
+}
+
+impl<S: derive::SumError> core::error::Error for Sum<S> {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        unsafe { S::source(&self.data, self.tag.index()) }
     }
 }
 

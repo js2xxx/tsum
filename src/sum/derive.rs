@@ -1,5 +1,6 @@
 use core::{
     any::{TypeId, type_name},
+    error::Error,
     fmt,
     hash::Hasher,
     iter::FusedIterator,
@@ -431,6 +432,30 @@ where
         } else {
             // SAFETY: The `Pin` guarantees that the data is not moved.
             unsafe { <(THead, Tail)>::poll(this.map_unchecked_mut(|t| &mut *t.next), tag - 1, cx) }
+        }
+    }
+}
+
+pub(super) trait SumError: SumDebug + SumDisplay {
+    unsafe fn source(this: &Self::Repr, tag: usize) -> Option<&(dyn Error + 'static)>;
+}
+
+impl SumError for () {
+    unsafe fn source(this: &Self::Repr, _: usize) -> Option<&(dyn Error + 'static)> {
+        this.0
+    }
+}
+
+impl<Head, Tail> SumError for (Head, Tail)
+where
+    Head: Error,
+    Tail: SumError,
+{
+    unsafe fn source(this: &Self::Repr, tag: usize) -> Option<&(dyn Error + 'static)> {
+        if tag == 0 {
+            unsafe { this.data.source() }
+        } else {
+            unsafe { Tail::source(&this.next, tag - 1) }
         }
     }
 }

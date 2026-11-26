@@ -24,6 +24,7 @@
 #![deny(rust_2024_compatibility)]
 #![allow(edition_2024_expr_fragment_specifier)]
 #![warn(missing_docs)]
+#![feature(macro_metavar_expr, macro_metavar_expr_concat)]
 
 #[cfg(test)]
 extern crate std;

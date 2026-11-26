@@ -2,7 +2,7 @@
 
 `tsum` provides two tagged unions backed by tuple lists. `Sum![A, B, A]` distinguishes members by position and accepts arbitrary Rust types. `Union![A, B]` selects members by type and requires each member to have a distinct `Element` ID. Both use the same handwritten representation and store one active value inline. [Tagged unions](https://en.wikipedia.org/wiki/Tagged_union)
 
-The representation traits are sealed to tuple lists. Generic code can use `SumList` and `UnionList` as bounds, and local types can derive `Element` to become union members.
+The representation traits are sealed to varadic type lists. Generic code can use `SumList` and `UnionList` as bounds, and local types can derive `Element` to become union members.
 
 ## Wait what? Varadic type lists?
 
@@ -164,7 +164,7 @@ assert_eq!(format!("{sum}"), "42");
 - Both types run the active member's destructor, which precludes implementing `Copy`.
 - Both types store the discriminant as `()` for zero or one member, `u8` for 2 through 256 members, and `usize` for 257 or more. Deep tuple lists may require a higher `recursion_limit` in the consuming crate.
 - Use a wrapper struct to derive custom traits for a particular `Sum` or `Union` type.
-- This crate heavily relies on unsafe code (manually implemented tagged unions). Use it at your own risk.
+- This crate heavily relies on unsafe code (manually implemented tagged unions) and several **nightly** features. Use it at your own risk.
 
 ## License
 

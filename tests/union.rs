@@ -6,7 +6,7 @@ use core::{
 };
 use std::{collections::hash_map::DefaultHasher, rc::Rc};
 
-use tsum::{T, Union, union::Element};
+use tsum::{T, Union, match_union, union::Element};
 
 fn hash(value: impl Hash) -> u64 {
     let mut state = DefaultHasher::new();
@@ -83,4 +83,18 @@ fn derived_elements_with_the_same_name_in_different_modules() {
     let value: Union![first::Member, second::Member, bool] = Union::new(second::Member);
     assert!(value.get::<first::Member>().is_none());
     assert!(value.get::<second::Member>().is_some());
+}
+
+#[test]
+fn match_union() {
+    #[derive(Element)]
+    struct Port(u16);
+
+    let value: Union![Port, bool] = Union::new(Port(443));
+    let name = match_union!(match value {
+        Port(port) if port == 443 => "https",
+        Port(_) => "other port",
+        _ => "flag",
+    });
+    assert_eq!(name, "https");
 }
