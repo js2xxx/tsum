@@ -162,7 +162,7 @@ assert_eq!(format!("{sum}"), "42");
 ## Caveats
 
 - Both types run the active member's destructor, which precludes implementing `Copy`.
-- Member positions use an eight-bit tag, with representable positions from 0 through 255.
+- Both types store the discriminant as `()` for zero or one member, `u8` for 2 through 256 members, and `usize` for 257 or more. Deep tuple lists may require a higher `recursion_limit` in the consuming crate.
 - Use a wrapper struct to derive custom traits for a particular `Sum` or `Union` type.
 - This crate heavily relies on unsafe code (manually implemented tagged unions). Use it at your own risk.
 

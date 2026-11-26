@@ -48,16 +48,16 @@ pub struct UInt<U>(PhantomData<U>);
 /// [the sum type]: struct@crate::Sum
 /// [module-level documentation]: self
 pub trait Index {
-    /// The reified value of the tag.
-    const TAG: u8;
+    /// The zero-based member position, independent of the stored tag's width.
+    const TAG: usize;
 }
 
 impl Index for UTerm {
-    const TAG: u8 = 0;
+    const TAG: usize = 0;
 }
 
 impl<U: Index> Index for UInt<U> {
-    const TAG: u8 = U::TAG.checked_add(1).expect("sum tag exceeds u8");
+    const TAG: usize = U::TAG.checked_add(1).expect("sum tag exceeds usize");
 }
 
 pub type U0 = UTerm;

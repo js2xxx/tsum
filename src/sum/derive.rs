@@ -8,11 +8,11 @@ use core::{
 use super::repr::{Cons, Nil, SumList};
 
 pub(super) trait SumClone: SumList {
-    unsafe fn clone(this: &Self::Repr, tag: u8) -> ManuallyDrop<Self::Repr>;
+    unsafe fn clone(this: &Self::Repr, tag: usize) -> ManuallyDrop<Self::Repr>;
 }
 
 impl SumClone for () {
-    unsafe fn clone(nil: &Self::Repr, _: u8) -> ManuallyDrop<Nil>
+    unsafe fn clone(nil: &Self::Repr, _: usize) -> ManuallyDrop<Nil>
     where
         Self: Clone,
     {
@@ -25,7 +25,7 @@ where
     Head: Clone,
     Tail: SumClone,
 {
-    unsafe fn clone(this: &Self::Repr, tag: u8) -> ManuallyDrop<Self::Repr> {
+    unsafe fn clone(this: &Self::Repr, tag: usize) -> ManuallyDrop<Self::Repr> {
         ManuallyDrop::new(if tag == 0 {
             let data = unsafe { this.data.clone() };
             Cons { data }
@@ -37,11 +37,11 @@ where
 }
 
 pub(super) trait SumDebug: SumList {
-    unsafe fn debug(this: &Self::Repr, tag: u8) -> &dyn fmt::Debug;
+    unsafe fn debug(this: &Self::Repr, tag: usize) -> &dyn fmt::Debug;
 }
 
 impl SumDebug for () {
-    unsafe fn debug(this: &Self::Repr, _: u8) -> &dyn fmt::Debug {
+    unsafe fn debug(this: &Self::Repr, _: usize) -> &dyn fmt::Debug {
         &this.0
     }
 }
@@ -51,7 +51,7 @@ where
     Head: fmt::Debug,
     Tail: SumDebug,
 {
-    unsafe fn debug(this: &Self::Repr, tag: u8) -> &dyn fmt::Debug {
+    unsafe fn debug(this: &Self::Repr, tag: usize) -> &dyn fmt::Debug {
         if tag == 0 {
             unsafe { &*this.data }
         } else {
@@ -61,11 +61,11 @@ where
 }
 
 pub(super) trait SumDisplay: SumList {
-    unsafe fn display(this: &Self::Repr, tag: u8) -> &dyn fmt::Display;
+    unsafe fn display(this: &Self::Repr, tag: usize) -> &dyn fmt::Display;
 }
 
 impl SumDisplay for () {
-    unsafe fn display(this: &Self::Repr, _: u8) -> &dyn fmt::Display {
+    unsafe fn display(this: &Self::Repr, _: usize) -> &dyn fmt::Display {
         &this.0
     }
 }
@@ -75,7 +75,7 @@ where
     Head: fmt::Display,
     Tail: SumDisplay,
 {
-    unsafe fn display(this: &Self::Repr, tag: u8) -> &dyn fmt::Display {
+    unsafe fn display(this: &Self::Repr, tag: usize) -> &dyn fmt::Display {
         if tag == 0 {
             unsafe { &*this.data }
         } else {
@@ -85,35 +85,35 @@ where
 }
 
 pub trait TypeMeta: SumList {
-    fn type_id(tag: u8) -> TypeId
+    fn type_id(tag: usize) -> TypeId
     where
         Self: 'static;
 
-    fn type_name(tag: u8) -> &'static str;
+    fn type_name(tag: usize) -> &'static str;
 
-    unsafe fn as_any(this: &Self::Repr, tag: u8) -> &dyn core::any::Any
+    unsafe fn as_any(this: &Self::Repr, tag: usize) -> &dyn core::any::Any
     where
         Self: 'static;
 
-    unsafe fn as_mut_any(this: &mut Self::Repr, tag: u8) -> &mut dyn core::any::Any
+    unsafe fn as_mut_any(this: &mut Self::Repr, tag: usize) -> &mut dyn core::any::Any
     where
         Self: 'static;
 }
 
 impl TypeMeta for () {
-    fn type_id(_: u8) -> TypeId {
+    fn type_id(_: usize) -> TypeId {
         unreachable!()
     }
 
-    fn type_name(_: u8) -> &'static str {
+    fn type_name(_: usize) -> &'static str {
         "<uninhabited>"
     }
 
-    unsafe fn as_any(_: &Self::Repr, _: u8) -> &dyn core::any::Any {
+    unsafe fn as_any(_: &Self::Repr, _: usize) -> &dyn core::any::Any {
         unreachable!()
     }
 
-    unsafe fn as_mut_any(_: &mut Self::Repr, _: u8) -> &mut dyn core::any::Any {
+    unsafe fn as_mut_any(_: &mut Self::Repr, _: usize) -> &mut dyn core::any::Any {
         unreachable!()
     }
 }
@@ -122,7 +122,7 @@ impl<Head, Tail> TypeMeta for (Head, Tail)
 where
     Tail: TypeMeta,
 {
-    fn type_id(tag: u8) -> TypeId
+    fn type_id(tag: usize) -> TypeId
     where
         Head: 'static,
         Tail: 'static,
@@ -134,7 +134,7 @@ where
         }
     }
 
-    fn type_name(tag: u8) -> &'static str {
+    fn type_name(tag: usize) -> &'static str {
         if tag == 0 {
             type_name::<Head>()
         } else {
@@ -142,7 +142,7 @@ where
         }
     }
 
-    unsafe fn as_any(this: &Self::Repr, tag: u8) -> &dyn core::any::Any
+    unsafe fn as_any(this: &Self::Repr, tag: usize) -> &dyn core::any::Any
     where
         Head: 'static,
         Tail: 'static,
@@ -154,7 +154,7 @@ where
         }
     }
 
-    unsafe fn as_mut_any(this: &mut Self::Repr, tag: u8) -> &mut dyn core::any::Any
+    unsafe fn as_mut_any(this: &mut Self::Repr, tag: usize) -> &mut dyn core::any::Any
     where
         Self: 'static,
     {
@@ -167,11 +167,11 @@ where
 }
 
 pub(super) trait SumPartialEq: SumList {
-    unsafe fn eq(this: &Self::Repr, other: &Self::Repr, tag: u8) -> bool;
+    unsafe fn eq(this: &Self::Repr, other: &Self::Repr, tag: usize) -> bool;
 }
 
 impl SumPartialEq for () {
-    unsafe fn eq(_: &Self::Repr, _: &Self::Repr, _: u8) -> bool {
+    unsafe fn eq(_: &Self::Repr, _: &Self::Repr, _: usize) -> bool {
         true
     }
 }
@@ -181,7 +181,7 @@ where
     Head: PartialEq,
     Tail: SumPartialEq,
 {
-    unsafe fn eq(this: &Self::Repr, other: &Self::Repr, tag: u8) -> bool {
+    unsafe fn eq(this: &Self::Repr, other: &Self::Repr, tag: usize) -> bool {
         if tag == 0 {
             unsafe { this.data == other.data }
         } else {
@@ -194,12 +194,12 @@ pub(super) trait SumPartialOrd: SumList + SumPartialEq {
     unsafe fn partial_cmp(
         this: &Self::Repr,
         other: &Self::Repr,
-        tag: u8,
+        tag: usize,
     ) -> Option<core::cmp::Ordering>;
 }
 
 impl SumPartialOrd for () {
-    unsafe fn partial_cmp(_: &Self::Repr, _: &Self::Repr, _: u8) -> Option<core::cmp::Ordering> {
+    unsafe fn partial_cmp(_: &Self::Repr, _: &Self::Repr, _: usize) -> Option<core::cmp::Ordering> {
         Some(core::cmp::Ordering::Equal)
     }
 }
@@ -212,7 +212,7 @@ where
     unsafe fn partial_cmp(
         this: &Self::Repr,
         other: &Self::Repr,
-        tag: u8,
+        tag: usize,
     ) -> Option<core::cmp::Ordering> {
         if tag == 0 {
             unsafe { this.data.partial_cmp(&other.data) }
@@ -223,11 +223,11 @@ where
 }
 
 pub(super) trait SumOrd: SumList + SumPartialOrd {
-    unsafe fn cmp(this: &Self::Repr, other: &Self::Repr, tag: u8) -> core::cmp::Ordering;
+    unsafe fn cmp(this: &Self::Repr, other: &Self::Repr, tag: usize) -> core::cmp::Ordering;
 }
 
 impl SumOrd for () {
-    unsafe fn cmp(_: &Self::Repr, _: &Self::Repr, _: u8) -> core::cmp::Ordering {
+    unsafe fn cmp(_: &Self::Repr, _: &Self::Repr, _: usize) -> core::cmp::Ordering {
         core::cmp::Ordering::Equal
     }
 }
@@ -237,7 +237,7 @@ where
     Head: Ord,
     Tail: SumOrd,
 {
-    unsafe fn cmp(this: &Self::Repr, other: &Self::Repr, tag: u8) -> core::cmp::Ordering {
+    unsafe fn cmp(this: &Self::Repr, other: &Self::Repr, tag: usize) -> core::cmp::Ordering {
         if tag == 0 {
             unsafe { this.data.cmp(&other.data) }
         } else {
@@ -247,11 +247,11 @@ where
 }
 
 pub(super) trait SumHash: SumList {
-    unsafe fn hash<H: Hasher>(this: &Self::Repr, tag: u8, state: &mut H);
+    unsafe fn hash<H: Hasher>(this: &Self::Repr, tag: usize, state: &mut H);
 }
 
 impl SumHash for () {
-    unsafe fn hash<H: Hasher>(_: &Self::Repr, _: u8, _: &mut H) {}
+    unsafe fn hash<H: Hasher>(_: &Self::Repr, _: usize, _: &mut H) {}
 }
 
 impl<Head, Tail> SumHash for (Head, Tail)
@@ -259,7 +259,7 @@ where
     Head: core::hash::Hash,
     Tail: SumHash,
 {
-    unsafe fn hash<H: Hasher>(this: &Self::Repr, tag: u8, state: &mut H) {
+    unsafe fn hash<H: Hasher>(this: &Self::Repr, tag: usize, state: &mut H) {
         if tag == 0 {
             unsafe { this.data.hash(state) }
         } else {

@@ -2,7 +2,8 @@
 //!
 //! Each member of a [`Union`] implements [`Element`] and has a distinct
 //! element ID. Use [`crate::Union!`] to write the list of members. Positions
-//! are zero-based and use an eight-bit tag.
+//! are zero-based. The tag uses `()` for up to one member, `u8` for 2 through
+//! 256 members, and `usize` for larger lists.
 //!
 //! ```
 //! use tsum::{T, Union};

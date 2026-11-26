@@ -81,7 +81,11 @@ use core::{
 pub(crate) mod derive;
 pub mod index;
 pub mod repr;
-use self::index::{Index, UTerm};
+mod tag;
+use self::{
+    index::{Index, UTerm},
+    tag::Tag,
+};
 
 /// The true generic representation of a sum type.
 ///
@@ -97,7 +101,7 @@ use self::index::{Index, UTerm};
 ///
 /// [crate-level]: crate
 pub struct Sum<S: repr::SumList> {
-    tag: u8,
+    tag: S::Discriminant,
     data: ManuallyDrop<S::Repr>,
 }
 
@@ -215,7 +219,7 @@ impl<S: repr::SumList> Sum<S> {
     where
         S: derive::TypeMeta + 'static,
     {
-        S::type_id(self.tag)
+        S::type_id(self.tag.index())
     }
 
     /// Returns the name of the type of the inhabited value.
@@ -238,7 +242,7 @@ impl<S: repr::SumList> Sum<S> {
     where
         S: derive::TypeMeta,
     {
-        S::type_name(self.tag)
+        S::type_name(self.tag.index())
     }
 
     /// Coerces the reference of the inhabited value immutably into the dynamic
@@ -256,7 +260,7 @@ impl<S: repr::SumList> Sum<S> {
     where
         S: derive::TypeMeta + 'static,
     {
-        unsafe { S::as_any(&self.data, self.tag) }
+        unsafe { S::as_any(&self.data, self.tag.index()) }
     }
 
     /// Coerces the reference of the inhabited value mutably into the dynamic
@@ -275,7 +279,7 @@ impl<S: repr::SumList> Sum<S> {
     where
         S: derive::TypeMeta + 'static,
     {
-        unsafe { S::as_mut_any(&mut self.data, self.tag) }
+        unsafe { S::as_mut_any(&mut self.data, self.tag.index()) }
     }
 }
 
@@ -296,7 +300,7 @@ impl<S: repr::SumList> Sum<S> {
         U: Index,
     {
         Sum {
-            tag: U::TAG,
+            tag: S::Discriminant::from_index(U::TAG),
             data: ManuallyDrop::new(S::from_data(value)),
         }
     }
@@ -360,7 +364,7 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        (self.tag == U::TAG).then(|| unsafe { &*S::as_ptr(&self.data) })
+        (self.tag.index() == U::TAG).then(|| unsafe { &*S::as_ptr(&self.data) })
     }
 
     /// Returns a mutable reference to the value if the `Sum` is inhabited
@@ -380,7 +384,7 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        (self.tag == U::TAG).then(|| unsafe { &mut *S::as_mut_ptr(&mut self.data) })
+        (self.tag.index() == U::TAG).then(|| unsafe { &mut *S::as_mut_ptr(&mut self.data) })
     }
 
     /// Performs the given function if the `Sum` is inhabited with the specified
@@ -473,7 +477,7 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        match S::try_unwrap(self.tag) {
+        match S::try_unwrap(self.tag.index()) {
             Ok(()) => {
                 let mut this = ManuallyDrop::new(self);
                 Ok(unsafe { S::into_data_unchecked(ManuallyDrop::take(&mut this.data)) })
@@ -507,14 +511,14 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        let tag = self.tag;
+        let tag = self.tag.index();
         match S::try_unwrap(tag) {
             Ok(()) => {
                 let mut this = ManuallyDrop::new(self);
                 let data = f(unsafe { S::into_data_unchecked(ManuallyDrop::take(&mut this.data)) });
                 let data = <Substitute<S, T, T2, U> as repr::Split<T2, U>>::from_data(data);
                 Sum {
-                    tag,
+                    tag: Tag::from_index(tag),
                     data: ManuallyDrop::new(data),
                 }
             }
@@ -553,7 +557,7 @@ impl<S: repr::SumList> Sum<S> {
     {
         // Both tags designate the original active member in their respective
         // lists.
-        match <S as repr::SplitList<S2, UMap>>::narrow_tag(self.tag) {
+        match <S as repr::SplitList<S2, UMap>>::narrow_tag(self.tag.index()) {
             Ok(tag) => Ok(unsafe { self.retag(tag) }),
             Err(tag) => Err(unsafe { self.retag(tag) }),
         }
@@ -579,13 +583,14 @@ impl<S: repr::SumList> Sum<S> {
     where
         S2: repr::SplitList<S, UMap>,
     {
-        let tag = <S2 as repr::SplitList<S, UMap>>::broaden_tag(self.tag);
+        let tag = <S2 as repr::SplitList<S, UMap>>::broaden_tag(self.tag.index());
         // The mapped tag selects the same member in the superset.
         unsafe { self.retag(tag) }
     }
 
     // SAFETY: `tag` must select the exact type of the active value in S2.
-    unsafe fn retag<S2: repr::SumList>(self, tag: u8) -> Sum<S2> {
+    unsafe fn retag<S2: repr::SumList>(self, tag: usize) -> Sum<S2> {
+        let tag = S2::Discriminant::from_index(tag);
         let this = ManuallyDrop::new(self);
         let mut data = MaybeUninit::<S2::Repr>::uninit();
         // Both representations store the member at offset zero. The smaller
@@ -608,19 +613,19 @@ impl<S: repr::SumList> Sum<S> {
 
 impl<S: derive::SumDebug> fmt::Debug for Sum<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(unsafe { S::debug(&self.data, self.tag) }, f)
+        fmt::Debug::fmt(unsafe { S::debug(&self.data, self.tag.index()) }, f)
     }
 }
 
 impl<S: derive::SumDisplay> fmt::Display for Sum<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(unsafe { S::display(&self.data, self.tag) }, f)
+        fmt::Display::fmt(unsafe { S::display(&self.data, self.tag.index()) }, f)
     }
 }
 
 impl<S: repr::SumList> Drop for Sum<S> {
     fn drop(&mut self) {
-        unsafe { S::drop(&mut self.data, self.tag) }
+        unsafe { S::drop(&mut self.data, self.tag.index()) }
     }
 }
 
@@ -628,14 +633,14 @@ impl<S: derive::SumClone> Clone for Sum<S> {
     fn clone(&self) -> Self {
         Sum {
             tag: self.tag,
-            data: unsafe { S::clone(&self.data, self.tag) },
+            data: unsafe { S::clone(&self.data, self.tag.index()) },
         }
     }
 }
 
 impl<S: derive::SumPartialEq> PartialEq for Sum<S> {
     fn eq(&self, other: &Self) -> bool {
-        self.tag == other.tag && unsafe { S::eq(&self.data, &other.data, self.tag) }
+        self.tag == other.tag && unsafe { S::eq(&self.data, &other.data, self.tag.index()) }
     }
 }
 
@@ -645,7 +650,7 @@ impl<S: derive::SumPartialOrd> PartialOrd for Sum<S> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         match self.tag.cmp(&other.tag) {
             core::cmp::Ordering::Equal => unsafe {
-                S::partial_cmp(&self.data, &other.data, self.tag)
+                S::partial_cmp(&self.data, &other.data, self.tag.index())
             },
             other => Some(other),
         }
@@ -656,14 +661,20 @@ impl<S: derive::SumOrd + Eq> Ord for Sum<S> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.tag
             .cmp(&other.tag)
-            .then_with(|| unsafe { S::cmp(&self.data, &other.data, self.tag) })
+            .then_with(|| unsafe { S::cmp(&self.data, &other.data, self.tag.index()) })
     }
 }
 
 impl<S: derive::SumHash> Hash for Sum<S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.tag.hash(state);
-        unsafe { S::hash(&self.data, self.tag, state) }
+        // Preserve the zero tag in the hash of a singleton even though its
+        // discriminant takes no space in memory.
+        if size_of::<S::Discriminant>() == 0 {
+            0u8.hash(state);
+        } else {
+            self.tag.hash(state);
+        }
+        unsafe { S::hash(&self.data, self.tag.index(), state) }
     }
 }
 
@@ -714,9 +725,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "sum tag exceeds u8")]
+    #[should_panic(expected = "sum tag exceeds usize")]
     fn inserting_a_member_checks_for_tag_overflow() {
-        <(bool, ()) as repr::Split<bool, U0>>::from_remainder(u8::MAX);
+        <(bool, ()) as repr::Split<bool, U0>>::from_remainder(usize::MAX);
     }
 
     #[test]

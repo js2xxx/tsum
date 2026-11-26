@@ -33,6 +33,7 @@ use core::{convert::Infallible, mem::ManuallyDrop};
 use super::{
     NarrowRem, Rem,
     index::{Index, U1, UInt, UTerm},
+    tag::{Tag, TagForIndex},
 };
 use crate::private::{Sealed, SealedSplit, SealedSplitList};
 
@@ -58,6 +59,10 @@ pub union Cons<T, U> {
 ///
 /// [`Sum`]: crate::sum::Sum
 pub trait SumList: Count + Sealed {
+    /// Storage for the discriminant: `()` for up to one member, `u8` for
+    /// 2 through 256 members, and `usize` for larger lists.
+    type Discriminant: Tag;
+
     /// The underlying representation of the `Sum` type.
     type Repr;
 
@@ -69,24 +74,27 @@ pub trait SumList: Count + Sealed {
     /// `this` must own the member selected by `tag`. After the call its storage
     /// must be reinitialized before accessing or dropping the member again.
     #[doc(hidden)]
-    unsafe fn drop(this: &mut ManuallyDrop<Self::Repr>, tag: u8);
+    unsafe fn drop(this: &mut ManuallyDrop<Self::Repr>, tag: usize);
 }
 
 impl SumList for () {
+    type Discriminant = ();
     type Repr = Nil;
     type Tags<U> = ();
 
-    unsafe fn drop(_: &mut ManuallyDrop<Nil>, _: u8) {}
+    unsafe fn drop(_: &mut ManuallyDrop<Nil>, _: usize) {}
 }
 
 impl<Head, Tail> SumList for (Head, Tail)
 where
     Tail: SumList,
 {
+    // The tail length is the largest zero-based position in this list.
+    type Discriminant = <Tail::Count as TagForIndex>::Storage;
     type Repr = Cons<Head, Tail::Repr>;
     type Tags<U> = (U, Tail::Tags<U>);
 
-    unsafe fn drop(this: &mut ManuallyDrop<Self::Repr>, tag: u8) {
+    unsafe fn drop(this: &mut ManuallyDrop<Self::Repr>, tag: usize) {
         if tag == 0 {
             unsafe { ManuallyDrop::drop(&mut this.data) };
         } else {
@@ -132,10 +140,10 @@ pub trait Split<T, U: Index>: SumList + SealedSplit<T, U> {
     type Substitute<T2>: Split<T2, U>;
 
     #[doc(hidden)]
-    fn from_remainder(tag: u8) -> u8;
+    fn from_remainder(tag: usize) -> usize;
 
     #[doc(hidden)]
-    fn try_unwrap(tag: u8) -> Result<(), u8>;
+    fn try_unwrap(tag: usize) -> Result<(), usize>;
 }
 
 impl<Head, Tail> Split<Head, UTerm> for (Head, Tail)
@@ -154,11 +162,11 @@ where
     type RemainderTags = Tail::Tags<U1>;
     type Substitute<T2> = (T2, Tail);
 
-    fn from_remainder(tag: u8) -> u8 {
-        tag.checked_add(1).expect("sum tag exceeds u8")
+    fn from_remainder(tag: usize) -> usize {
+        tag.checked_add(1).expect("sum tag exceeds usize")
     }
 
-    fn try_unwrap(tag: u8) -> Result<(), u8> {
+    fn try_unwrap(tag: usize) -> Result<(), usize> {
         match tag.checked_sub(1) {
             None => Ok(()),
             Some(tag) => Err(tag),
@@ -184,15 +192,15 @@ where
     type RemainderTags = (UTerm, <Tail as Split<T, U>>::RemainderTags);
     type Substitute<T2> = (Head, Tail::Substitute<T2>);
 
-    fn from_remainder(tag: u8) -> u8 {
+    fn from_remainder(tag: usize) -> usize {
         if tag < UInt::<U>::TAG {
             tag
         } else {
-            tag.checked_add(1).expect("sum tag exceeds u8")
+            tag.checked_add(1).expect("sum tag exceeds usize")
         }
     }
 
-    fn try_unwrap(tag: u8) -> Result<(), u8> {
+    fn try_unwrap(tag: usize) -> Result<(), usize> {
         let cur = UInt::<U>::TAG;
         match tag.cmp(&cur) {
             core::cmp::Ordering::Equal => Ok(()),
@@ -205,7 +213,7 @@ where
 /// Counts the number of elements in a type list using index tags.
 pub trait Count: Sealed {
     /// The number of elements in the type list, measured by index tags.
-    type Count: Index;
+    type Count: Index + TagForIndex;
 }
 
 impl Count for () {
@@ -229,20 +237,20 @@ pub trait SplitList<TList: SumList, UList>: SumList + SealedSplitList<TList, ULi
     type Remainder: SumList;
 
     #[doc(hidden)]
-    fn broaden_tag(tag: u8) -> u8;
+    fn broaden_tag(tag: usize) -> usize;
 
     #[doc(hidden)]
-    fn narrow_tag(tag: u8) -> Result<u8, u8>;
+    fn narrow_tag(tag: usize) -> Result<usize, usize>;
 }
 
 impl<T: SumList> SplitList<(), ()> for T {
     type Remainder = Self;
 
-    fn broaden_tag(tag: u8) -> u8 {
+    fn broaden_tag(tag: usize) -> usize {
         unreachable!("mapping tag {tag} from an empty set")
     }
 
-    fn narrow_tag(tag: u8) -> Result<u8, u8> {
+    fn narrow_tag(tag: usize) -> Result<usize, usize> {
         Err(tag)
     }
 }
@@ -257,7 +265,7 @@ where
 {
     type Remainder = NarrowRem<Rem<Self, SubHead, HeadIndex>, SubTail, TailIndex>;
 
-    fn broaden_tag(tag: u8) -> u8 {
+    fn broaden_tag(tag: usize) -> usize {
         match <(SubHead, SubTail) as Split<SubHead, UTerm>>::try_unwrap(tag) {
             Ok(()) => HeadIndex::TAG,
             Err(remainder) => {
@@ -267,7 +275,7 @@ where
         }
     }
 
-    fn narrow_tag(tag: u8) -> Result<u8, u8> {
+    fn narrow_tag(tag: usize) -> Result<usize, usize> {
         Ok(match Self::try_unwrap(tag) {
             Ok(()) => 0,
             Err(remainder) => {
