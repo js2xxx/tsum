@@ -1,8 +1,5 @@
 use core::{
-    any::{TypeId, type_name},
-    fmt,
-    hash::Hasher,
-    mem::ManuallyDrop,
+    any::{TypeId, type_name}, fmt, hash::Hasher, iter::FusedIterator, mem::ManuallyDrop, pin::Pin,
 };
 
 use super::repr::{Cons, Nil, SumList};
@@ -264,6 +261,175 @@ where
             unsafe { this.data.hash(state) }
         } else {
             unsafe { Tail::hash(&this.next, tag - 1, state) }
+        }
+    }
+}
+
+pub trait SumIterator: SumList {
+    type Item;
+
+    unsafe fn next(this: &mut Self::Repr, tag: usize) -> Option<Self::Item>;
+
+    unsafe fn size_hint(this: &Self::Repr, tag: usize) -> (usize, Option<usize>);
+}
+
+impl<Head> SumIterator for (Head, ())
+where
+    Head: Iterator,
+{
+    type Item = Head::Item;
+
+    unsafe fn next(this: &mut Self::Repr, tag: usize) -> Option<Self::Item> {
+        debug_assert_eq!(tag, 0);
+        unsafe { this.data.next() }
+    }
+
+    unsafe fn size_hint(this: &Self::Repr, tag: usize) -> (usize, Option<usize>) {
+        debug_assert_eq!(tag, 0);
+        unsafe { this.data.size_hint() }
+    }
+}
+
+impl<Head, THead, Tail> SumIterator for (Head, (THead, Tail))
+where
+    Head: Iterator,
+    (THead, Tail): SumIterator<Item = Head::Item>,
+{
+    type Item = Head::Item;
+
+    unsafe fn next(this: &mut Self::Repr, tag: usize) -> Option<Self::Item> {
+        if tag == 0 {
+            unsafe { this.data.next() }
+        } else {
+            unsafe { <(THead, Tail)>::next(&mut this.next, tag - 1) }
+        }
+    }
+
+    unsafe fn size_hint(this: &Self::Repr, tag: usize) -> (usize, Option<usize>) {
+        if tag == 0 {
+            unsafe { this.data.size_hint() }
+        } else {
+            unsafe { <(THead, Tail)>::size_hint(&this.next, tag - 1) }
+        }
+    }
+}
+
+pub trait SumExactSizeIterator: SumList + SumIterator {
+    unsafe fn len(this: &Self::Repr, tag: usize) -> usize;
+}
+
+impl<Head> SumExactSizeIterator for (Head, ())
+where
+    Head: ExactSizeIterator,
+{
+    unsafe fn len(this: &Self::Repr, tag: usize) -> usize {
+        debug_assert_eq!(tag, 0);
+        unsafe { this.data.len() }
+    }
+}
+
+impl<Head, THead, Tail> SumExactSizeIterator for (Head, (THead, Tail))
+where
+    Head: ExactSizeIterator,
+    (THead, Tail): SumExactSizeIterator<Item = Head::Item>,
+{
+    unsafe fn len(this: &Self::Repr, tag: usize) -> usize {
+        if tag == 0 {
+            unsafe { this.data.len() }
+        } else {
+            unsafe { <(THead, Tail)>::len(&this.next, tag - 1) }
+        }
+    }
+}
+
+pub trait SumFusedIterator: SumList + SumIterator {}
+
+impl<Head> SumFusedIterator for (Head, ())
+where
+    Head: FusedIterator,
+{
+}
+
+impl<Head, THead, Tail> SumFusedIterator for (Head, (THead, Tail))
+where
+    Head: FusedIterator,
+    (THead, Tail): SumFusedIterator<Item = Head::Item>,
+{
+}
+
+pub trait SumDoubleEndedIterator: SumList + SumIterator {
+    unsafe fn next_back(this: &mut Self::Repr, tag: usize) -> Option<Self::Item>;
+}
+
+impl<Head> SumDoubleEndedIterator for (Head, ())
+where
+    Head: DoubleEndedIterator,
+{
+    unsafe fn next_back(this: &mut Self::Repr, tag: usize) -> Option<Self::Item> {
+        debug_assert_eq!(tag, 0);
+        unsafe { this.data.next_back() }
+    }
+}
+
+impl<Head, THead, Tail> SumDoubleEndedIterator for (Head, (THead, Tail))
+where
+    Head: DoubleEndedIterator,
+    (THead, Tail): SumDoubleEndedIterator<Item = Head::Item>,
+{
+    unsafe fn next_back(this: &mut Self::Repr, tag: usize) -> Option<Self::Item> {
+        if tag == 0 {
+            unsafe { this.data.next_back() }
+        } else {
+            unsafe { <(THead, Tail)>::next_back(&mut this.next, tag - 1) }
+        }
+    }
+}
+
+pub trait SumFuture: SumList {
+    type Output;
+
+    unsafe fn poll(
+        this: Pin<&mut Self::Repr>,
+        tag: usize,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output>;
+}
+
+impl<Head> SumFuture for (Head, ())
+where
+    Head: Future,
+{
+    type Output = Head::Output;
+
+    unsafe fn poll(
+        this: Pin<&mut Self::Repr>,
+        tag: usize,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        debug_assert_eq!(tag, 0);
+        // SAFETY: The `Pin` guarantees that the data is not moved.
+        unsafe { this.map_unchecked_mut(|t| &mut *t.data).poll(cx) }
+    }
+}
+
+impl<Head, THead, Tail> SumFuture for (Head, (THead, Tail))
+where
+    Head: Future,
+    (THead, Tail): SumFuture<Output = Head::Output>,
+{
+    type Output = Head::Output;
+
+    unsafe fn poll(
+        this: Pin<&mut Self::Repr>,
+        tag: usize,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        if tag == 0 {
+            // SAFETY: The `Pin` guarantees that the data is not moved.
+            unsafe { this.map_unchecked_mut(|t| &mut *t.data).poll(cx) }
+        } else {
+            // SAFETY: The `Pin` guarantees that the data is not moved.
+            unsafe { <(THead, Tail)>::poll(this.map_unchecked_mut(|t| &mut *t.next), tag - 1, cx) }
         }
     }
 }

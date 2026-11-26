@@ -19,6 +19,7 @@
 use core::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    pin::Pin,
 };
 
 use crate::sum::Sum;
@@ -168,6 +169,16 @@ impl<L: UnionList> Union<L> {
         L: UnionOf<T>,
     {
         self.0.get_mut::<T, L::Tag>()
+    }
+
+    /// Mutably borrows the value if `T` is active, pinned in place.
+    pub fn get_pin_mut<T: Element>(self: Pin<&mut Self>) -> Option<Pin<&mut T>>
+    where
+        L: UnionOf<T>,
+    {
+        // SAFETY: `Union` is a newtype wrapper around `Sum`, so the `Pin`
+        // guarantees are preserved.
+        unsafe { self.map_unchecked_mut(|t| &mut t.0) }.get_pin_mut::<T, L::Tag>()
     }
 
     /// Calls `f` with a reference if `T` is active, then returns the union.

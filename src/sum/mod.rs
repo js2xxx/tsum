@@ -76,16 +76,15 @@ use core::{
     marker::PhantomData,
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
+    pin::Pin,
     ptr,
 };
+
 pub(crate) mod derive;
 pub mod index;
 pub mod repr;
 mod tag;
-use self::{
-    index::{Index, UTerm},
-    tag::Tag,
-};
+use self::{index::Index, tag::Tag};
 
 /// The true generic representation of a sum type.
 ///
@@ -136,7 +135,7 @@ impl<T> Deref for Sum<(T, ())> {
     /// let s: Sum![i32] = 42.into();
     /// assert_eq!(*s, 42);
     fn deref(&self) -> &Self::Target {
-        unsafe { &*<(T, ()) as repr::Split<T, UTerm>>::as_ptr(&self.data) }
+        unsafe { &self.data.data }
     }
 }
 
@@ -154,7 +153,7 @@ impl<T> DerefMut for Sum<(T, ())> {
     /// *s += 1;
     /// assert_eq!(*s, 43);
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *<(T, ()) as repr::Split<T, UTerm>>::as_mut_ptr(&mut self.data) }
+        unsafe { &mut self.data.data }
     }
 }
 
@@ -364,7 +363,7 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        (self.tag.index() == U::TAG).then(|| unsafe { &*S::as_ptr(&self.data) })
+        (self.tag.index() == U::TAG).then(|| unsafe { &*S::as_ptr(&raw const *self.data) })
     }
 
     /// Returns a mutable reference to the value if the `Sum` is inhabited
@@ -384,7 +383,34 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        (self.tag.index() == U::TAG).then(|| unsafe { &mut *S::as_mut_ptr(&mut self.data) })
+        (self.tag.index() == U::TAG)
+            .then(|| unsafe { &mut *S::as_ptr(&raw mut *self.data).cast_mut() })
+    }
+
+    /// Returns a pinned mutable reference to the value if the `Sum` is
+    /// inhabited with the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use tsum::Sum;
+    ///
+    /// let s: Sum![i32, u64, String] = Sum::new(42i32);
+    /// let s = core::pin::pin!(s);
+    /// assert_eq!(
+    ///     s.get_pin_mut::<i32, _>(),
+    ///     Some(core::pin::Pin::new(&mut 42i32))
+    /// );
+    /// ```
+    pub fn get_pin_mut<T, U>(self: Pin<&mut Self>) -> Option<Pin<&mut T>>
+    where
+        S: repr::Split<T, U>,
+        U: Index,
+    {
+        (self.tag.index() == U::TAG).then(|| unsafe {
+            let data = &raw mut *self.get_unchecked_mut().data;
+            Pin::new_unchecked(&mut *S::as_ptr(data).cast_mut())
+        })
     }
 
     /// Performs the given function if the `Sum` is inhabited with the specified
@@ -675,6 +701,40 @@ impl<S: derive::SumHash> Hash for Sum<S> {
             self.tag.hash(state);
         }
         unsafe { S::hash(&self.data, self.tag.index(), state) }
+    }
+}
+
+impl<S: derive::SumIterator> Iterator for Sum<S> {
+    type Item = S::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe { S::next(&mut self.data, self.tag.index()) }
+    }
+}
+
+impl<S: derive::SumExactSizeIterator> ExactSizeIterator for Sum<S> {
+    fn len(&self) -> usize {
+        unsafe { S::len(&self.data, self.tag.index()) }
+    }
+}
+
+impl<S: derive::SumFusedIterator> core::iter::FusedIterator for Sum<S> {}
+
+impl<S: derive::SumDoubleEndedIterator> DoubleEndedIterator for Sum<S> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        unsafe { S::next_back(&mut self.data, self.tag.index()) }
+    }
+}
+
+impl<S: derive::SumFuture> core::future::Future for Sum<S> {
+    type Output = S::Output;
+
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        unsafe { S::poll(Pin::new_unchecked(&mut this.data), this.tag.index(), cx) }
     }
 }
 

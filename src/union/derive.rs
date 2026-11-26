@@ -3,6 +3,8 @@ use core::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
+    iter::FusedIterator,
+    pin::Pin,
 };
 
 use super::{Union, UnionList};
@@ -112,5 +114,54 @@ where
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
+    }
+}
+
+impl<L: UnionList> Iterator for Union<L>
+where
+    Sum<L::Members>: Iterator,
+{
+    type Item = <Sum<L::Members> as Iterator>::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl<L: UnionList> ExactSizeIterator for Union<L>
+where
+    Sum<L::Members>: ExactSizeIterator,
+{
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<L: UnionList> FusedIterator for Union<L> where Sum<L::Members>: FusedIterator {}
+
+impl<L: UnionList> DoubleEndedIterator for Union<L>
+where
+    Sum<L::Members>: DoubleEndedIterator,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back()
+    }
+}
+
+impl<L: UnionList> Future for Union<L>
+where
+    Sum<L::Members>: Future,
+{
+    type Output = <Sum<L::Members> as Future>::Output;
+
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        unsafe { self.map_unchecked_mut(|t| &mut t.0) }.poll(cx)
     }
 }

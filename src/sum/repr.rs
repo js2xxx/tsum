@@ -118,13 +118,8 @@ pub trait Split<T, U: Index>: SumList + SealedSplit<T, U> {
     unsafe fn into_data_unchecked(this: Self::Repr) -> T;
 
     #[doc(hidden)]
-    fn as_ptr(this: &Self::Repr) -> *const T {
-        core::ptr::from_ref(this).cast()
-    }
-
-    #[doc(hidden)]
-    fn as_mut_ptr(this: &mut Self::Repr) -> *mut T {
-        core::ptr::from_mut(this).cast()
+    fn as_ptr(this: *const Self::Repr) -> *const T {
+        this.cast()
     }
 
     /// The remainder type list from splitting type list `Self` with type `T`
