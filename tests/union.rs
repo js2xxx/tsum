@@ -1,7 +1,7 @@
 use core::{
     any::TypeId,
     cell::Cell,
-    cmp::Ordering,
+    cmp::Ordering::{Equal, Greater, Less},
     hash::{Hash, Hasher},
 };
 use std::{collections::hash_map::DefaultHasher, rc::Rc};
@@ -26,16 +26,102 @@ fn traits_dispatch_to_the_active_member() {
     *value.as_mut_any().downcast_mut::<i32>().unwrap() = 9;
     assert_eq!(format!("{copy:04}"), "0007");
     assert_eq!(format!("{value:?}"), "9");
-    assert_eq!(copy.cmp(&value), Ordering::Less);
-    assert!(Value::new(true) < copy);
-    assert_ne!(Value::new(false), Value::new(0i32));
-    assert_eq!(hash(&value), hash((1u8, 9i32)));
-    assert_eq!(hash(Value::new(true)), hash((0u8, true)));
+    assert_eq!(hash(&value), hash(9i32));
+    assert_eq!(hash(Value::new(true)), hash(true));
+    let reordered: Union![i32, bool] = Union::new(9i32);
+    assert_eq!(value, reordered);
+    assert_eq!(hash(&value), hash(&reordered));
+}
 
-    let nan = <Union![bool, f32]>::new(f32::NAN);
+#[test]
+fn equality_across_overlapping_lists() {
+    #[derive(Debug, Element)]
+    struct LeftOnly;
+    #[derive(Debug, Element)]
+    struct RightOnly;
+
+    type Left<'a> = Union![LeftOnly, &'a str, u8];
+    type Right<'a> = Union![u8, RightOnly, &'a str];
+
+    let text = String::from("shared");
+    let lhs = Left::new(text.as_str());
+    let rhs = Right::new("shared");
+    assert!(lhs.type_eq(&rhs));
+    assert_eq!(lhs, rhs);
+    assert_eq!(rhs, lhs);
+    assert_ne!(lhs, Right::new("different"));
+    assert!(!lhs.type_eq(&Right::new(1u8)));
+    assert_ne!(lhs, Right::new(1u8));
+    assert_eq!(Left::new(1u8), Right::new(1u8));
+
+    let missing = Left::new(LeftOnly);
+    let other = Right::new(RightOnly);
+    assert!(!missing.type_eq(&other));
+    assert_ne!(missing, other);
+    assert_ne!(lhs, other);
+    assert_ne!(missing, rhs);
+
+    let disjoint: Union![RightOnly] = RightOnly.into();
+    assert!(!lhs.type_eq(&disjoint));
+    assert_ne!(lhs, disjoint);
+    assert_ne!(disjoint, lhs);
+}
+
+#[test]
+fn partial_order_across_overlapping_lists() {
+    #[derive(Element)]
+    struct LeftOnly;
+
+    type Left = Union![LeftOnly, u8, bool];
+    type Right = Union![bool, char, u8];
+
+    for (left, right, expected) in [
+        (Left::new(2u8), Right::new(10u8), Some(Less)),
+        (Left::new(2u8), Right::new(2u8), Some(Equal)),
+        (Left::new(true), Right::new(false), Some(Greater)),
+        (Left::new(2u8), Right::new(true), None),
+        (Left::new(LeftOnly), Right::new(false), None),
+        (Left::new(false), Right::new('a'), None),
+    ] {
+        assert_eq!(left.partial_cmp(&right), expected);
+        assert_eq!(
+            right.partial_cmp(&left),
+            expected.map(|order| order.reverse())
+        );
+        assert_eq!(left == right, expected == Some(Equal));
+        assert_eq!(left < right, expected == Some(Less));
+        assert_eq!(left <= right, matches!(expected, Some(Less | Equal)));
+        assert_eq!(left > right, expected == Some(Greater));
+        assert_eq!(left >= right, matches!(expected, Some(Greater | Equal)));
+    }
+
+    let disjoint: Union![LeftOnly] = LeftOnly.into();
+    assert_eq!(disjoint.partial_cmp(&Right::new(true)), None);
+    assert_eq!(Right::new(true).partial_cmp(&disjoint), None);
+
+    // Even within one list of totally ordered types, different active members
+    // are incomparable.
+    type Same = Union![u8, bool];
+    assert_eq!(Same::new(0u8).partial_cmp(&Same::new(false)), None);
+}
+
+#[test]
+fn type_equality_is_independent_of_payload_equality() {
+    #[derive(Element)]
+    struct Opaque;
+
+    let opaque: Union![u8, Opaque] = Union::new(Opaque);
+    let same: Union![Opaque, u8] = Union::new(Opaque);
+    assert!(opaque.type_eq(&same));
+
+    let nan: Union![f32, bool] = Union::new(f32::NAN);
+    let reordered: Union![bool, f32] = Union::new(f32::NAN);
+    assert!(nan.type_eq(&reordered));
+    assert_ne!(nan, reordered);
     assert_ne!(nan, nan);
+    assert_eq!(nan.partial_cmp(&reordered), None);
+    assert_eq!(reordered.partial_cmp(&nan), None);
     assert_eq!(nan.partial_cmp(&nan), None);
-    assert!(nan > Union::new(true));
 }
 
 #[derive(Clone, Debug, Element)]

@@ -249,7 +249,7 @@ where
     }
 }
 
-pub(super) trait SumHash: SumList {
+pub trait SumHash: SumList {
     unsafe fn hash<H: Hasher>(this: &Self::Repr, tag: usize, state: &mut H);
 }
 

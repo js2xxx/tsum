@@ -288,6 +288,10 @@ impl<S: repr::SumList> Sum<S> {
 }
 
 impl<S: repr::SumList> Sum<S> {
+    pub(crate) fn active_index(&self) -> usize {
+        self.tag.index()
+    }
+
     /// Constructs the sum with `value` at position `U`.
     ///
     /// The index can be inferred when `T` occurs once. Specify it when several
@@ -713,6 +717,12 @@ impl<S: derive::SumOrd + Eq> Ord for Sum<S> {
     }
 }
 
+impl<S: derive::SumHash> Sum<S> {
+    pub(crate) fn hash_data<H: Hasher>(&self, state: &mut H) {
+        unsafe { S::hash(&self.data, self.tag.index(), state) }
+    }
+}
+
 impl<S: derive::SumHash> Hash for Sum<S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Preserve the zero tag in the hash of a singleton even though its
@@ -722,7 +732,7 @@ impl<S: derive::SumHash> Hash for Sum<S> {
         } else {
             self.tag.hash(state);
         }
-        unsafe { S::hash(&self.data, self.tag.index(), state) }
+        self.hash_data(state)
     }
 }
 

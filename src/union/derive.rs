@@ -7,8 +7,8 @@ use core::{
     pin::Pin,
 };
 
-use super::{Union, UnionList};
-use crate::sum::{Sum, derive::TypeMeta};
+use super::{ElemIntersect, Element, Union, UnionList, UnionOf};
+use crate::sum::{self, Sum, derive::TypeMeta};
 
 impl<L: UnionList<Members: TypeMeta>> Union<L> {
     /// Returns the type ID of the inhabited value.
@@ -116,41 +116,88 @@ where
     }
 }
 
-impl<L: UnionList> PartialEq for Union<L>
-where
-    Sum<L::Members>: PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
+trait MemberEq<L: UnionList, R: UnionList> {
+    fn member_eq(lhs: &Union<L>, rhs: &Union<R>) -> bool;
+}
+
+impl<L: UnionList, R: UnionList> MemberEq<L, R> for () {
+    fn member_eq(_: &Union<L>, _: &Union<R>) -> bool {
+        false
     }
 }
 
-impl<L: UnionList> Eq for Union<L> where Sum<L::Members>: Eq {}
-
-impl<L: UnionList> PartialOrd for Union<L>
+impl<Head, Tail, L, R> MemberEq<L, R> for (Head, Tail)
 where
-    Sum<L::Members>: PartialOrd,
+    Head: Element + PartialEq,
+    Tail: MemberEq<L, R>,
+    L: UnionOf<Head>,
+    R: UnionOf<Head>,
 {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+    fn member_eq(lhs: &Union<L>, rhs: &Union<R>) -> bool {
+        match lhs.get::<Head>() {
+            Some(left) => rhs.get::<Head>().is_some_and(|right| left == right),
+            None => Tail::member_eq(lhs, rhs),
+        }
     }
 }
 
-impl<L: UnionList> Ord for Union<L>
+/// Compares the active values when both unions hold the same member type.
+/// Only members shared by the two lists must implement [`PartialEq`].
+impl<L, R> PartialEq<Union<R>> for Union<L>
 where
-    Sum<L::Members>: Ord,
+    L: UnionList + ElemIntersect<R>,
+    R: UnionList,
+    L::Output: MemberEq<L, R>,
 {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
+    fn eq(&self, rhs: &Union<R>) -> bool {
+        L::Output::member_eq(self, rhs)
+    }
+}
+
+impl<L: UnionList + Eq> Eq for Union<L> where Self: PartialEq {}
+
+trait MemberOrd<L: UnionList, R: UnionList>: MemberEq<L, R> {
+    fn member_cmp(lhs: &Union<L>, rhs: &Union<R>) -> Option<Ordering>;
+}
+
+impl<L: UnionList, R: UnionList> MemberOrd<L, R> for () {
+    fn member_cmp(_: &Union<L>, _: &Union<R>) -> Option<Ordering> {
+        None
+    }
+}
+
+impl<Head, Tail, L, R> MemberOrd<L, R> for (Head, Tail)
+where
+    Head: Element + PartialOrd,
+    Tail: MemberOrd<L, R>,
+    L: UnionOf<Head>,
+    R: UnionOf<Head>,
+{
+    fn member_cmp(lhs: &Union<L>, rhs: &Union<R>) -> Option<Ordering> {
+        match lhs.get::<Head>() {
+            Some(left) => rhs.get::<Head>().and_then(|right| left.partial_cmp(right)),
+            None => Tail::member_cmp(lhs, rhs),
+        }
+    }
+}
+
+impl<L, R> PartialOrd<Union<R>> for Union<L>
+where
+    L: UnionList + ElemIntersect<R>,
+    R: UnionList,
+    L::Output: MemberOrd<L, R>,
+{
+    fn partial_cmp(&self, rhs: &Union<R>) -> Option<Ordering> {
+        L::Output::member_cmp(self, rhs)
     }
 }
 
 impl<L: UnionList> Hash for Union<L>
 where
-    Sum<L::Members>: Hash,
+    L::Members: sum::derive::SumHash,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        self.0.hash_data(state);
     }
 }
 

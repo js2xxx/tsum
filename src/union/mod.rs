@@ -27,6 +27,7 @@ use crate::sum::Sum;
 
 mod derive;
 mod elem;
+mod intersect;
 mod repr;
 
 /// Makes a local struct, enum, or union a member type by implementing
@@ -50,14 +51,16 @@ pub use tsum_macros::Element;
 
 pub use self::{
     elem::*,
-    repr::{UnionList, UnionOf, UnionOfList},
+    intersect::ElemIntersect,
+    repr::{UnionList, UnionOf, UnionOfList, UnsignedList},
 };
 
 /// A tagged value containing one member of the [union list](UnionList) `L`.
 ///
-/// Cloning and formatting use the active value. Comparisons order different
-/// members by their positions in `L`. Hashing includes the position and value.
-/// Each trait is available when all members implement it.
+/// Cloning, formatting, and hashing use the active value. Equality works
+/// across member lists in any order. Two values compare equal if their active
+/// member types match and their payloads compare equal. Use [`Union::type_eq`]
+/// to compare only the active types.
 ///
 /// # Examples
 ///
@@ -66,7 +69,8 @@ pub use self::{
 ///
 /// let value: Union![u32, bool] = Union::new(42u32);
 /// assert_eq!(value.clone().get(), Some(&42u32));
-/// assert!(value < Union::new(false));
+/// let other: Union![char, u32] = Union::new(42u32);
+/// assert_eq!(value, other);
 /// ```
 ///
 /// A repeated element ID makes the list invalid.
@@ -168,6 +172,31 @@ pub type Rem<L, T> = <L as repr::UnionOfImp<T, !>>::Remainder;
 pub type ListRem<L, L2> = <L as repr::UnionOfListImp<L2>>::Remainder;
 
 impl<L: UnionList> Union<L> {
+    /// Returns whether both unions hold the same member type. The lists may
+    /// differ in membership and order. The payloads can have different values
+    /// and need no equality implementation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tsum::Union;
+    ///
+    /// let left: Union![u8, bool] = Union::new(1u8);
+    /// let right: Union![char, u8] = Union::new(2u8);
+    /// assert!(left.type_eq(&right));
+    /// assert_ne!(left, right);
+    ///
+    /// let other: Union![char, u8] = Union::new('a');
+    /// assert!(!left.type_eq(&other));
+    /// ```
+    pub fn type_eq<R: UnionList>(&self, rhs: &Union<R>) -> bool
+    where
+        L: ElemIntersect<R>,
+    {
+        L::LhsIndices::position(self.0.active_index())
+            .is_some_and(|pos| L::RhsIndices::position(rhs.0.active_index()) == Some(pos))
+    }
+
     /// Constructs a union with `value`.
     ///
     /// # Examples

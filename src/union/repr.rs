@@ -134,9 +134,29 @@ where
 pub trait UnionOfList<L: UnionList>: UnionOfListImp<L, Output = L> {}
 impl<L: UnionList, R> UnionOfList<L> for R where R: UnionOfListImp<L, Output = L> {}
 
-pub trait UnsignedList: Sealed {}
-impl UnsignedList for () {}
-impl<Head: Unsigned, Tail: UnsignedList> UnsignedList for (Head, Tail) {}
+/// A tuple list of zero-based positions, represented by [`typenum`] unsigned
+/// integers. See [`ElemIntersect`](super::ElemIntersect) for a pair of index
+/// lists.
+pub trait UnsignedList: Sealed {
+    /// Returns the first position of `index` in this list.
+    fn position(index: usize) -> Option<usize>;
+}
+
+impl UnsignedList for () {
+    fn position(_: usize) -> Option<usize> {
+        None
+    }
+}
+
+impl<Head: Unsigned, Tail: UnsignedList> UnsignedList for (Head, Tail) {
+    fn position(index: usize) -> Option<usize> {
+        if index == Head::USIZE {
+            Some(0)
+        } else {
+            Tail::position(index).map(|pos| pos + 1)
+        }
+    }
+}
 
 pub trait UnionOfListImp<L: UnionList>
 where

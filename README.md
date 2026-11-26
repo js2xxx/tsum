@@ -140,7 +140,9 @@ assert_eq!(remaining.into_inner(), Port(443));
 
 ### Common traits
 
-Both `Sum` and `Union` implement `Clone`, `Debug`, `Display`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, and `Hash` when every member supports the corresponding trait. Formatting uses the active value. Comparisons between different members follow list order, and hashing includes the member position. Use `type_name()` to inspect the active type. For lists of `'static` types, `type_id()`, `as_any()`, and `as_mut_any()` also support runtime type inspection.
+Both `Sum` and `Union` implement `Clone`, `Debug`, `Display`, `Eq`, and `Hash` when every member supports the corresponding trait. A `Sum` compares and hashes the active position and value, and orders different members by position. Two unions can be compared across different lists. They are equal when they hold the same member type and the payloads compare equal. Only shared members need `PartialEq`. Use `left.type_eq(&right)` to compare just the active types. A union hashes its active value.
+
+Use `type_name()` to inspect the active type. For lists of `'static` types, `type_id()`, `as_any()`, and `as_mut_any()` also support runtime type inspection.
 
 ```rust
 use tsum::{Sum, T};
