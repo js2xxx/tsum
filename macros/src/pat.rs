@@ -17,6 +17,7 @@ struct SumPat {
 
     is_in_subpat: bool,
     err: Option<syn::Error>,
+    guard: Option<Box<Expr>>,
 }
 
 impl SumPat {
@@ -60,6 +61,14 @@ impl Visit<'_> for SumPat {
     fn visit_pat(&mut self, i: &'_ syn::Pat) {
         match i {
             #![cfg_attr(test, deny(non_exhaustive_omitted_patterns))]
+            Pat::Guard(guard) => {
+                if !self.is_in_subpat {
+                    self.guard = Some(guard.guard.clone());
+                }
+                self.is_non_exhaustive = true;
+                visit::visit_pat(self, i);
+            }
+
             Pat::Ident(pi) => {
                 if !self.is_in_subpat {
                     let s = pi.ident.to_string();
@@ -67,6 +76,7 @@ impl Visit<'_> for SumPat {
                         let ty = Type::Path(syn::TypePath {
                             qself: None,
                             path: syn::Path::from(pi.ident.clone()),
+                            attrs: Vec::new(),
                         });
 
                         if self.check_ty(&ty) {
@@ -92,6 +102,7 @@ impl Visit<'_> for SumPat {
                 let ty = Type::Path(syn::TypePath {
                     qself: qself.clone(),
                     path: path.clone(),
+                    attrs: Vec::new(),
                 });
 
                 if self.check_ty(&ty) {
@@ -200,13 +211,12 @@ impl Visit<'_> for SumPat {
 
 pub struct SumArm {
     pat: SumPat,
-    guard: Option<Box<Expr>>,
     expr: Box<Expr>,
 }
 
 impl Parse for SumArm {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let syn::Arm { attrs, pat, guard, body, .. } = input.parse()?;
+        let syn::Arm { attrs, pat, body, .. } = input.parse()?;
 
         if let (Some(first), Some(last)) = (attrs.first(), attrs.last()) {
             return Err(syn::Error::new(
@@ -229,15 +239,7 @@ impl Parse for SumArm {
             ));
         }
 
-        if guard.is_some() {
-            branches.is_non_exhaustive = true;
-        }
-
-        Ok(SumArm {
-            pat: branches,
-            guard: guard.map(|g| g.1),
-            expr: body,
-        })
+        Ok(SumArm { pat: branches, expr: body })
     }
 }
 
@@ -291,12 +293,13 @@ pub fn expand_body(
     let tagged = tagged.then(|| quote!(, _));
 
     let branches = arms.iter_mut().flat_map(|arm| {
-        let SumArm { pat, guard, expr } = arm;
+        let SumArm { pat, expr } = arm;
         let SumPat {
             is_wildcard,
             variants,
             variant_pats,
             is_non_exhaustive,
+            guard,
             ..
         } = pat;
 
