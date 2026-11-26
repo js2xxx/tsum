@@ -3,7 +3,8 @@
 #![feature(non_exhaustive_omitted_patterns_lint, proc_macro_expand)]
 
 use proc_macro::TokenStream;
-use syn::{Meta, Token, punctuated::Punctuated};
+use quote::ToTokens;
+use syn::{Meta, Token, parse::Parse, punctuated::Punctuated};
 
 mod id;
 mod pat;
@@ -20,11 +21,30 @@ pub fn match_union(input: TokenStream) -> TokenStream {
     pat::expand_match(input, false).into()
 }
 
+struct GenIdInput {
+    path: syn::Path,
+    ident: syn::Ident,
+}
+
+impl Parse for GenIdInput {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let ident = input.parse()?;
+        Ok(GenIdInput { path, ident })
+    }
+}
+
 #[doc(hidden)]
 #[proc_macro]
 pub fn gen_id(input: TokenStream) -> TokenStream {
-    let prefix = syn::parse_macro_input!(input as syn::Path);
-    id::element_id(quote::quote!(#prefix), "", proc_macro::Span::call_site()).into()
+    let prefix = syn::parse_macro_input!(input as GenIdInput);
+    id::element_id(
+        prefix.path.to_token_stream(),
+        &prefix.ident.to_string(),
+        proc_macro::Span::call_site(),
+    )
+    .into()
 }
 
 #[proc_macro_derive(Element, attributes(tsum))]
