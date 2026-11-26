@@ -15,6 +15,21 @@ macro_rules! Sum {
     [$($t:ty),* $(,)?] => [$crate::sum::Sum::<$crate::T![$($t,)*]>];
 }
 
+/// Constructs a [`Union`](struct@crate::Union) type from a list of types.
+///
+/// # Examples
+///
+/// ```rust
+/// use tsum::Union;
+///
+/// type MyUnion = Union![i32, u32, f64];
+/// let u: MyUnion = Union::new(42u32);
+/// ```
+#[macro_export]
+macro_rules! Union {
+    [$($t:ty),* $(,)?] => [$crate::union::Union::<$crate::T![$($t,)*]>];
+}
+
 /// Constructs a tuple list (heterogeneous list) type from a list of types.
 ///
 /// The value version of the macro is [`t`].

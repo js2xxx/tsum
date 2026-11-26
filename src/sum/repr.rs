@@ -28,12 +28,13 @@
 //!
 //! [`Sum`]: crate::sum::Sum
 
-use core::{convert::Infallible, mem::ManuallyDrop, ptr};
+use core::{convert::Infallible, mem::ManuallyDrop};
 
 use super::{
     NarrowRem, Rem,
     index::{Index, U1, UInt, UTerm},
 };
+use crate::private::{Sealed, SealedSplit, SealedSplitList};
 
 /// The terminator type of the underlying union of the [`Sum`] type.
 ///
@@ -43,22 +44,30 @@ pub struct Nil(pub(super) Infallible);
 /// The accumulator type of the underlying union of the [`Sum`] type.
 ///
 /// [`Sum`]: crate::sum::Sum
+#[repr(C)]
 pub union Cons<T, U> {
     pub(super) data: ManuallyDrop<T>,
     pub(super) next: ManuallyDrop<U>,
 }
 
-/// The trait that type lists implement to support its corresponding tagged
-/// union representation for the [`Sum`] type.
+/// A tuple list with tagged storage for [`Sum`].
+///
+/// This trait is sealed to `()` and `(Head, Tail)` with a `SumList` tail.
+/// The tag is the zero-based position of the active member. The representation
+/// stores that member at offset zero with its required size and alignment.
 ///
 /// [`Sum`]: crate::sum::Sum
-pub trait SumList: Count {
+pub trait SumList: Count + Sealed {
     /// The underlying representation of the `Sum` type.
     type Repr;
 
     /// The index tag mapping from the type list to the `Sum` type.
     type Tags<U>;
 
+    /// # Safety
+    ///
+    /// `this` must own the member selected by `tag`. After the call its storage
+    /// must be reinitialized before accessing or dropping the member again.
     #[doc(hidden)]
     unsafe fn drop(this: &mut ManuallyDrop<Self::Repr>, tag: u8);
 }
@@ -86,22 +95,29 @@ where
     }
 }
 
-/// The trait that type lists implement to support manipulating a specified
-/// variant value marked by a specified tag in the [`Sum`] type.
+/// A tuple list containing `T` at position `U`.
 ///
-/// [`Sum`]: crate::sum::Sum
-pub trait Split<T, U: Index>: SumList {
+/// This sealed trait preserves the order of the other members when removing
+/// or replacing `T`.
+pub trait Split<T, U: Index>: SumList + SealedSplit<T, U> {
     #[doc(hidden)]
     fn from_data(data: T) -> Self::Repr;
 
+    /// # Safety
+    ///
+    /// The active member of `this` must be the one at `U`.
     #[doc(hidden)]
     unsafe fn into_data_unchecked(this: Self::Repr) -> T;
 
     #[doc(hidden)]
-    fn as_ptr(this: &Self::Repr) -> *const T;
+    fn as_ptr(this: &Self::Repr) -> *const T {
+        core::ptr::from_ref(this).cast()
+    }
 
     #[doc(hidden)]
-    fn as_mut_ptr(this: &mut Self::Repr) -> *mut T;
+    fn as_mut_ptr(this: &mut Self::Repr) -> *mut T {
+        core::ptr::from_mut(this).cast()
+    }
 
     /// The remainder type list from splitting type list `Self` with type `T`
     /// and its index tag `U`.
@@ -134,24 +150,12 @@ where
         unsafe { ManuallyDrop::into_inner(this.data) }
     }
 
-    fn as_ptr(this: &Self::Repr) -> *const Head {
-        let ptr = ptr::addr_of!(this.data).cast::<Head>();
-        debug_assert_eq!(ptr.cast(), this as _);
-        ptr
-    }
-
-    fn as_mut_ptr(this: &mut Self::Repr) -> *mut Head {
-        let ptr = ptr::addr_of_mut!(this.data).cast::<Head>();
-        debug_assert_eq!(ptr.cast(), this as _);
-        ptr
-    }
-
     type Remainder = Tail;
     type RemainderTags = Tail::Tags<U1>;
     type Substitute<T2> = (T2, Tail);
 
     fn from_remainder(tag: u8) -> u8 {
-        tag + 1
+        tag.checked_add(1).expect("sum tag exceeds u8")
     }
 
     fn try_unwrap(tag: u8) -> Result<(), u8> {
@@ -176,24 +180,16 @@ where
         unsafe { Tail::into_data_unchecked(ManuallyDrop::into_inner(this.next)) }
     }
 
-    fn as_ptr(this: &Self::Repr) -> *const T {
-        let ptr = unsafe { Tail::as_ptr(&this.next) };
-        debug_assert_eq!(ptr.cast(), this as _);
-        ptr
-    }
-
-    fn as_mut_ptr(this: &mut Self::Repr) -> *mut T {
-        let ptr = unsafe { Tail::as_mut_ptr(&mut this.next) };
-        debug_assert_eq!(ptr.cast(), this as _);
-        ptr
-    }
-
     type Remainder = (Head, <Tail as Split<T, U>>::Remainder);
     type RemainderTags = (UTerm, <Tail as Split<T, U>>::RemainderTags);
     type Substitute<T2> = (Head, Tail::Substitute<T2>);
 
     fn from_remainder(tag: u8) -> u8 {
-        if tag < UInt::<U>::TAG { tag } else { tag + 1 }
+        if tag < UInt::<U>::TAG {
+            tag
+        } else {
+            tag.checked_add(1).expect("sum tag exceeds u8")
+        }
     }
 
     fn try_unwrap(tag: u8) -> Result<(), u8> {
@@ -207,7 +203,7 @@ where
 }
 
 /// Counts the number of elements in a type list using index tags.
-pub trait Count {
+pub trait Count: Sealed {
     /// The number of elements in the type list, measured by index tags.
     type Count: Index;
 }
@@ -223,9 +219,11 @@ where
     type Count = UInt<Tail::Count>;
 }
 
-/// The trait that type lists implement to be able to be splitted from another
-/// type list.
-pub trait SplitList<TList: SumList, UList>: SumList {
+/// A tuple list that can be partitioned into `TList` and its remainder.
+///
+/// This sealed trait uses `UList` to identify each selected occurrence,
+/// including when `TList` reorders members.
+pub trait SplitList<TList: SumList, UList>: SumList + SealedSplitList<TList, UList> {
     /// The remainder type list from splitting type list `Self` with type list
     /// `TList` and its index tag map `UList`.
     type Remainder: SumList;

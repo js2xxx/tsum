@@ -74,11 +74,11 @@ use core::{
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem::{self, ManuallyDrop, MaybeUninit},
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr,
 };
-mod derive;
+pub(crate) mod derive;
 pub mod index;
 pub mod repr;
 use self::index::{Index, UTerm};
@@ -167,10 +167,9 @@ impl<T> Sum<(T, ())> {
     /// let s: Sum![i32] = 42.into();
     /// assert_eq!(s.into_inner(), 42);
     pub fn into_inner(self) -> T {
-        unsafe {
-            let this = ManuallyDrop::new(self);
-            mem::transmute_copy(&this.data)
-        }
+        let mut this = ManuallyDrop::new(self);
+        // A singleton always has its head initialized.
+        unsafe { ManuallyDrop::take(&mut this.data.data) }
     }
 }
 
@@ -474,13 +473,13 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        let mut this = ManuallyDrop::new(self);
-        match S::try_unwrap(this.tag) {
-            Ok(()) => Ok(unsafe { S::into_data_unchecked(ManuallyDrop::take(&mut this.data)) }),
-            Err(tag) => unsafe {
-                let data = mem::transmute_copy(&this.data);
-                Err(Sum { tag, data })
-            },
+        match S::try_unwrap(self.tag) {
+            Ok(()) => {
+                let mut this = ManuallyDrop::new(self);
+                Ok(unsafe { S::into_data_unchecked(ManuallyDrop::take(&mut this.data)) })
+            }
+            // The remainder contains the active member at the adjusted tag.
+            Err(tag) => Err(unsafe { self.retag(tag) }),
         }
     }
 
@@ -508,10 +507,10 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::Split<T, U>,
         U: Index,
     {
-        let mut this = ManuallyDrop::new(self);
-        let tag = this.tag;
+        let tag = self.tag;
         match S::try_unwrap(tag) {
             Ok(()) => {
+                let mut this = ManuallyDrop::new(self);
                 let data = f(unsafe { S::into_data_unchecked(ManuallyDrop::take(&mut this.data)) });
                 let data = <Substitute<S, T, T2, U> as repr::Split<T2, U>>::from_data(data);
                 Sum {
@@ -519,10 +518,9 @@ impl<S: repr::SumList> Sum<S> {
                     data: ManuallyDrop::new(data),
                 }
             }
-            Err(_) => unsafe {
-                let data = mem::transmute_copy(&this.data);
-                Sum { tag, data }
-            },
+            // Only an inactive member changed type. Its replacement can have
+            // a different size or alignment.
+            Err(_) => unsafe { self.retag(tag) },
         }
     }
 }
@@ -553,16 +551,11 @@ impl<S: repr::SumList> Sum<S> {
         S: repr::SplitList<S2, UMap>,
         S2: repr::SumList,
     {
-        let this = ManuallyDrop::new(self);
-        match <S as repr::SplitList<S2, UMap>>::narrow_tag(this.tag) {
-            Ok(tag) => unsafe {
-                let data = mem::transmute_copy(&this.data);
-                Ok(Sum { tag, data })
-            },
-            Err(tag) => unsafe {
-                let data = mem::transmute_copy(&this.data);
-                Err(Sum { tag, data })
-            },
+        // Both tags designate the original active member in their respective
+        // lists.
+        match <S as repr::SplitList<S2, UMap>>::narrow_tag(self.tag) {
+            Ok(tag) => Ok(unsafe { self.retag(tag) }),
+            Err(tag) => Err(unsafe { self.retag(tag) }),
         }
     }
 
@@ -586,19 +579,28 @@ impl<S: repr::SumList> Sum<S> {
     where
         S2: repr::SplitList<S, UMap>,
     {
+        let tag = <S2 as repr::SplitList<S, UMap>>::broaden_tag(self.tag);
+        // The mapped tag selects the same member in the superset.
+        unsafe { self.retag(tag) }
+    }
+
+    // SAFETY: `tag` must select the exact type of the active value in S2.
+    unsafe fn retag<S2: repr::SumList>(self, tag: u8) -> Sum<S2> {
+        let this = ManuallyDrop::new(self);
+        let mut data = MaybeUninit::<S2::Repr>::uninit();
+        // Both representations store the member at offset zero. The smaller
+        // size covers the entire value, including any of its padding. A byte
+        // copy preserves uninitialized bytes and pointer provenance.
+        let count = size_of::<S::Repr>().min(size_of::<S2::Repr>());
         unsafe {
-            let tag = <S2 as repr::SplitList<S, UMap>>::broaden_tag(self.tag);
-            let mut data = MaybeUninit::<S2::Repr>::uninit();
-            data.as_mut_ptr()
-                .cast::<ManuallyDrop<S::Repr>>()
-                .write(ptr::read(&self.data));
-
-            mem::forget(self);
-            let data = data.assume_init();
-
+            ptr::copy_nonoverlapping(
+                ptr::from_ref(&this.data).cast::<u8>(),
+                data.as_mut_ptr().cast::<u8>(),
+                count,
+            );
             Sum {
                 tag,
-                data: ManuallyDrop::new(data),
+                data: ManuallyDrop::new(data.assume_init()),
             }
         }
     }
@@ -606,13 +608,13 @@ impl<S: repr::SumList> Sum<S> {
 
 impl<S: derive::SumDebug> fmt::Debug for Sum<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", unsafe { S::debug(&self.data, self.tag) })
+        fmt::Debug::fmt(unsafe { S::debug(&self.data, self.tag) }, f)
     }
 }
 
 impl<S: derive::SumDisplay> fmt::Display for Sum<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", unsafe { S::display(&self.data, self.tag) })
+        fmt::Display::fmt(unsafe { S::display(&self.data, self.tag) }, f)
     }
 }
 
@@ -694,6 +696,27 @@ mod tests {
         let sum: Sum<T1> = sum.narrow::<_, T![U0, U0]>().unwrap();
         let sum: Sum<(String, ())> = sum.narrow::<T0, _>().unwrap_err();
         assert_eq!(*sum, "Hello World!");
+    }
+
+    #[test]
+    fn mapping_an_inactive_member_can_grow_or_shrink_storage() {
+        #[repr(align(64))]
+        struct Large {
+            _payload: [u8; 128],
+        }
+
+        let mut number = 7;
+        let value: crate::Sum![u8, &mut i32] = Sum::new(&mut number);
+        let value: crate::Sum![Large, &mut i32] = value.map(|_: u8| panic!("inactive member"));
+        let value: crate::Sum![(), &mut i32] = value.map(|_: Large| panic!("inactive member"));
+        *value.try_unwrap::<&mut i32, _>().unwrap() += 1;
+        assert_eq!(number, 8);
+    }
+
+    #[test]
+    #[should_panic(expected = "sum tag exceeds u8")]
+    fn inserting_a_member_checks_for_tag_overflow() {
+        <(bool, ()) as repr::Split<bool, U0>>::from_remainder(u8::MAX);
     }
 
     #[test]

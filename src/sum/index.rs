@@ -57,7 +57,7 @@ impl Index for UTerm {
 }
 
 impl<U: Index> Index for UInt<U> {
-    const TAG: u8 = 1 + U::TAG;
+    const TAG: u8 = U::TAG.checked_add(1).expect("sum tag exceeds u8");
 }
 
 pub type U0 = UTerm;

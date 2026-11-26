@@ -1,8 +1,8 @@
-# THE true generic sum type for Rust
+# THE true generic sum and union types for Rust
 
-This crate provides THE true generic [sum types](https://en.wikipedia.org/wiki/Tagged_union) in Rust.
+`tsum` provides two tagged unions backed by tuple lists. `Sum![A, B, A]` distinguishes members by position and accepts arbitrary Rust types. `Union![A, B]` selects members by type and requires each member to have a distinct `Element` ID. Both use the same handwritten representation and store one active value inline. [Tagged unions](https://en.wikipedia.org/wiki/Tagged_union)
 
-The provided sum type are not derived from user-defined types, nor from massive amount of generated `enum`s. Instead, there is only one "true generic sum type" defined in the crate, which uses varadic type lists for type binding.
+The representation traits are sealed to tuple lists. Generic code can use `SumList` and `UnionList` as bounds, and local types can derive `Element` to become union members.
 
 ## Wait what? Varadic type lists?
 
@@ -114,9 +114,33 @@ let sum: Sum3 = sum.map(|s: String| s.as_bytes()[0] as i64);
 assert_eq!(sum, Sum3::new(104i64));
 ```
 
+### Unions with distinct member types
+
+Use `Union!` when each type occurs once. The type determines its position, so calls such as `get::<T>()` and `try_unwrap::<T>()` need just the member type. Derive `tsum::union::Element` for a local type to use it alongside built-in elements such as `u32`, `bool`, and `&str`. Generic instantiations of one derived type share an element ID.
+
+```rust
+use tsum::{T, Union, union::Element};
+
+#[derive(Element, Debug, PartialEq)]
+struct Port(u16);
+
+type Setting = Union![bool, Port, u32];
+let mut setting = Setting::new(Port(80));
+setting.get_mut::<Port>().unwrap().0 = 443;
+assert_eq!(setting.get::<u32>(), None);
+
+// Narrowing accepts a reordered subset. On failure it returns the other members.
+let subset: Union![u32, Port] = setting.narrow::<T![u32, Port]>().unwrap();
+let setting: Setting = subset.broaden();
+let remaining: Union![Port] = setting.narrow::<T![bool, u32]>().unwrap_err();
+assert_eq!(remaining.into_inner(), Port(443));
+```
+
+`match_union!` matches the active value with the same pattern syntax as `match_sum!`. For type-level set operations, `union::Insert<L, T>` prepends a missing member and `union::Merge<L, R>` inserts each member of `R` into `L` in turn.
+
 ### Common traits
 
-Various common traits are provided for sum types:
+Both `Sum` and `Union` implement `Clone`, `Debug`, `Display`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, and `Hash` when every member supports the corresponding trait. Formatting uses the active value. Comparisons between different members follow list order, and hashing includes the member position. Use `type_name()` to inspect the active type. For lists of `'static` types, `type_id()`, `as_any()`, and `as_mut_any()` also support runtime type inspection.
 
 ```rust
 use tsum::{Sum, T};
@@ -137,8 +161,9 @@ assert_eq!(format!("{sum}"), "42");
 
 ## Caveats
 
-- Due to the limitations of Rust, `Sum` does not implement `Copy`.
-- Due to the limitations of Rust, Custom derivable traits cannot derive on `Sum` automatically. Use a wrapper struct instead.
+- Both types run the active member's destructor, which precludes implementing `Copy`.
+- Member positions use an eight-bit tag, with representable positions from 0 through 255.
+- Use a wrapper struct to derive custom traits for a particular `Sum` or `Union` type.
 - This crate heavily relies on unsafe code (manually implemented tagged unions). Use it at your own risk.
 
 ## License

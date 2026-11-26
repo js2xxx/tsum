@@ -10,10 +10,18 @@
 #[cfg(test)]
 extern crate std;
 
-mod macros;
-pub mod sum;
+#[doc(hidden)]
+pub mod exports {
+    pub use typenum;
+}
 
-/// Creates a match expression for the [`Sum`] type.
+mod macros;
+mod private;
+pub mod sum;
+pub mod union;
+
+/// Matches a [`Sum`](struct@Sum) by its active member and a pattern for its
+/// value.
 ///
 /// # Examples
 ///
@@ -32,5 +40,19 @@ pub mod sum;
 /// assert_eq!(result, "the answer");
 /// ```
 pub use tsum_macros::match_sum;
+/// Matches a [`Union`](struct@Union) by its active member and a pattern for its
+/// value.
+///
+/// ```
+/// use tsum::{Union, match_union};
+///
+/// let value: Union![u32, bool] = Union::new(42u32);
+/// let answer = match_union!(match value {
+///     42u32 => "forty-two",
+///     _ => "other",
+/// });
+/// assert_eq!(answer, "forty-two");
+/// ```
+pub use tsum_macros::match_union;
 
-pub use self::sum::Sum;
+pub use self::{sum::Sum, union::Union};

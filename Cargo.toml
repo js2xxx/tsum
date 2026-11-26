@@ -1,11 +1,12 @@
+[package]
+name = "tsum"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
 [workspace]
 members = ["macros"]
 
-[package]
-edition = "2024"
-license = "MIT OR Apache-2.0"
-name = "tsum"
-version = "0.1.0"
-
 [dependencies]
-tsum-macros = {path = "macros"}
+tsum-macros = { path = "macros" }
+typenum = "1.20.1"
