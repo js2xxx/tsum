@@ -12,7 +12,7 @@ categories.workspace = true
 members = ["macros"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "A type-level sum & union type library for Rust"
 repository = "https://github.com/js2xxx/tsum"
@@ -27,5 +27,5 @@ keywords = [
 categories = ["data-structures", "no-std"]
 
 [dependencies]
-tsum-macros = { path = "macros", version = "=0.1.1" }
+tsum-macros = { path = "macros", version = "=0.1.2" }
 typenum = "1.20.1"
