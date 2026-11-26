@@ -30,7 +30,7 @@ pub fn gen_id(input: TokenStream) -> TokenStream {
 pub fn derive_element(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
-    let mut prefix = syn::parse_quote!(::tsum::exports::typenum);
+    let mut prefix = quote::quote!(::tsum);
 
     if let Some(a) = input.attrs.iter().find(|a| a.path().is_ident("tsum")) {
         let nested = match a.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
@@ -41,7 +41,7 @@ pub fn derive_element(input: TokenStream) -> TokenStream {
             match meta {
                 Meta::NameValue(nv) if nv.path.is_ident("crate") => {
                     let value = nv.value;
-                    prefix = syn::parse_quote!(#value);
+                    prefix = quote::quote!(#value);
                 }
                 _ => {
                     return syn::Error::new_spanned(meta, "undefined attribute")
@@ -54,9 +54,13 @@ pub fn derive_element(input: TokenStream) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = input.ident;
-    let id = id::element_id(prefix, &name.to_string(), name.span().unwrap());
+    let id = id::element_id(
+        syn::parse_quote!(#prefix::exports::typenum),
+        &name.to_string(),
+        name.span().unwrap(),
+    );
     let expanded = quote::quote! {
-        unsafe impl #impl_generics ::tsum::union::Element
+        unsafe impl #impl_generics #prefix::union::Element
             for #name #ty_generics #where_clause
         {
             type Id = #id;

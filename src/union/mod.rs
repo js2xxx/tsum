@@ -16,7 +16,10 @@
 //! assert_eq!(full.try_unwrap::<char>(), Ok('b'));
 //! ```
 
-use core::ops::{Deref, DerefMut};
+use core::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use crate::sum::Sum;
 
@@ -129,6 +132,26 @@ impl<L: UnionList> Union<L> {
         L: UnionOf<T>,
     {
         Self(Sum::new::<T, L::Tag>(value))
+    }
+
+    /// Constructs a new `Union` from the given value and a marker of its type
+    /// lists.
+    ///
+    /// This is useful when the type information is not known at macro
+    /// expansion. It can be used in pairs with [`Union::type_marker`].
+    pub fn new_marked<T: Element>(value: T, _: PhantomData<L>) -> Self
+    where
+        L: UnionOf<T>,
+    {
+        Self::new(value)
+    }
+
+    /// Returns a marker of the type list of the `Union`.
+    ///
+    /// This is useful when the type information is not known at macro
+    /// expansion. It can be used in pairs with [`Union::new_marked`].
+    pub fn type_marker(&self) -> PhantomData<L> {
+        PhantomData
     }
 
     /// Borrows the value if `T` is active.
