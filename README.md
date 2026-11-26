@@ -1,6 +1,9 @@
 # THE true generic sum and union types for Rust
 
-`tsum` provides two tagged unions backed by tuple lists. `Sum![A, B, A]` distinguishes members by position and accepts arbitrary Rust types. `Union![A, B]` selects members by type and requires each member to have a distinct `Element` ID. Both use the same handwritten representation and store one active value inline. [Tagged unions](https://en.wikipedia.org/wiki/Tagged_union)
+[![crates.io](https://img.shields.io/crates/v/tsum.svg)](https://crates.io/crates/tsum)
+[![docs.rs](https://docs.rs/tsum/badge.svg)](https://docs.rs/tsum)
+
+`tsum` provides two tagged unions backed by varadic type lists. `Sum![A, B, A]` distinguishes members by position and accepts arbitrary Rust types. `Union![A, B]` selects members by type and requires each member to have a distinct `Element` ID. Both use the same handwritten representation and store one active value inline. [Tagged unions](https://en.wikipedia.org/wiki/Tagged_union)
 
 The representation traits are sealed to varadic type lists. Generic code can use `SumList` and `UnionList` as bounds, and local types can derive `Element` to become union members.
 
